@@ -662,19 +662,15 @@
   function renderLoginUi() {
     renderHeaderSesi();
     var ses = getSession();
-    var box = $('login-box'), chip = $('user-chip'), wrap = $('form-kirim-wrap');
+    var box = $('login-box'), wrap = $('form-kirim-wrap');
     if (ses) {
       box.style.display = 'none';
-      chip.style.display = 'flex';
       wrap.style.display = 'block';
-      var peran = ses.role === 'guru' ? '👨‍🏫 Guru/Tendik (GTK)' : '👩‍🎓 Murid — Kelas ' + ses.kelasDigit;
-      chip.innerHTML = '<span>🔐 <b>' + esc(ses.nama) + '</b> · ' + peran + '</span>';
       $('f-nama').value = ses.nama;
       $('f-kelas').value = ses.role === 'guru' ? 'Guru/Tendik (GTK)' : KELAS_LABEL[ses.kelasDigit];
       $('profil-wrap').style.display = ses.role === 'guru' ? 'block' : 'none';
     } else {
       box.style.display = 'block';
-      chip.style.display = 'none';
       wrap.style.display = 'none';
     }
   }
