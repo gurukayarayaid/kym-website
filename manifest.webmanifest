@@ -1,0 +1,37 @@
+{
+  "name": "KYM — Kumpulan Karya Murid",
+  "short_name": "KYM Puisi",
+  "description": "Pengumpulan karya puisi murid — Tema Rukun dengan Teman. Materi KYM, kirim puisi, dan panel admin.",
+  "lang": "id",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7fb",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Kirim Puisi",
+      "short_name": "Kirim",
+      "url": "./index.html#kirim",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Karya Saya",
+      "short_name": "Karya",
+      "url": "./index.html#karyaku",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Admin",
+      "short_name": "Admin",
+      "url": "./index.html#admin",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>KYM — Rukun dengan Teman</title>
+<link rel="icon" href="logo-sekolah.jpg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0ea5e9">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="KYM Puisi">
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --ink: #1f2937; --muted: #6b7280;
+    --primary: #0ea5e9; --primary-2: #0369a1; --accent: #f59e0b;
+    --line: #e5e7eb; --danger: #dc2626; --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
+  a { color: var(--primary); text-decoration: none; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 108px; }
+
+  header.site { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%); color: #fff; padding: 18px 0; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+  header.site .wrap { padding: 0 16px; }
+  .head-row { display: flex; align-items: center; gap: 14px; }
+  .head-row img { width: 52px; height: 52px; border-radius: 50%; background: #fff; object-fit: cover; }
+  .head-row h1 { font-size: 1.25rem; }
+  .head-row .sub { font-size: .85rem; opacity: .9; }
+  .head-row .sub .utama { font-weight: 700; font-size: 1.05rem; opacity: 1; }
+  /* Sesi login di pojok kanan atas */
+  .sesi-box { margin-left: auto; display: none; align-items: center; gap: 10px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 5px 6px 5px 14px; max-width: 58%; }
+  .sesi-nama { font-size: .85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }
+  .sesi-nama small { display: block; font-size: .68rem; opacity: .85; font-weight: 600; }
+  .sesi-keluar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; border: none; background: #fff; color: var(--primary-2); cursor: pointer; transition: transform .12s, filter .15s; }
+  .sesi-keluar:hover { filter: brightness(.94); }
+  .sesi-keluar:active { transform: scale(.92); }
+
+  /* Tombol keluar admin di pojok kanan atas header */
+  .admin-keluar { display: none; margin-left: auto; align-items: center; gap: 8px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 999px; padding: 5px 6px 5px 14px; color: #991b1b; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+  .admin-keluar .btn-adm-keluar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; border: none; background: #dc2626; color: #fff; cursor: pointer; transition: transform .12s, filter .15s; }
+  .admin-keluar .btn-adm-keluar:hover { filter: brightness(.9); }
+  .admin-keluar .btn-adm-keluar:active { transform: scale(.92); }
+  @media (min-width: 640px) { .admin-keluar { padding: 5px 8px 5px 16px; } .admin-keluar .btn-adm-keluar { flex: 0 0 38px; width: 38px; height: 38px; } }
+
+  /* Bottom navigation khas Android */
+  nav.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(15,23,42,.07); display: flex; justify-content: center; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  nav.bottom a { flex: 0 1 120px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 2px 9px; color: var(--muted); font-weight: 600; font-size: .68rem; cursor: pointer; }
+  nav.bottom a .ic { font-size: 21px; line-height: 1; padding: 5px 18px; border-radius: 999px; transition: background .15s; }
+  nav.bottom a.active { color: var(--primary-2); }
+  nav.bottom a.active .ic { background: var(--primary); }
+
+  .card { background: var(--card); border-radius: var(--radius); padding: 22px; box-shadow: 0 1px 4px rgba(15,23,42,.06); margin-top: 22px; border: 1px solid var(--line); }
+  .card h2 { color: var(--primary-2); margin-bottom: 12px; font-size: 1.3rem; }
+  .card h3 { color: var(--primary-2); margin: 16px 0 8px; font-size: 1.05rem; }
+  .card p { margin-bottom: 10px; line-height: 1.7; }
+  .card ul { margin: 0 0 10px 22px; line-height: 1.8; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 6px; font-size: .85em; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: .3px; }
+  .pill.gold { background: #fef3c7; color: #92400e; }
+  .pill.green { background: #d1fae5; color: #065f46; }
+  .pill.red { background: #fee2e2; color: #991b1b; }
+  .pill.gray { background: #e5e7eb; color: #374151; }
+  .pill.blue { background: #dbeafe; color: #1e40af; }
+
+  .btn { display: inline-block; border: none; cursor: pointer; font-weight: 600; padding: 10px 18px; border-radius: 10px; font-size: .95rem; background: var(--primary); color: #fff; transition: filter .15s; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.secondary { background: #fff; color: var(--primary-2); border: 1px solid var(--primary); }
+  .btn.danger { background: var(--danger); }
+  .btn.small { padding: 6px 12px; font-size: .82rem; border-radius: 8px; }
+
+  .q { border-top: 1px dashed var(--line); padding-top: 18px; margin-top: 18px; }
+  .q .tag { color: var(--accent); font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+  .q h3 { margin-top: 4px; }
+  .steps { display: grid; gap: 12px; margin-top: 10px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .step .n { min-width: 30px; height: 30px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+
+  .toast { position: fixed; bottom: calc(100px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%) translateY(90px); background: var(--ink); color: #fff; padding: 12px 22px; border-radius: 999px; font-size: .92rem; box-shadow: 0 4px 16px rgba(0,0,0,.25); transition: transform .25s ease; z-index: 60; max-width: 90vw; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  form label { display: block; font-weight: 600; font-size: .9rem; margin: 14px 0 6px; }
+  form label .req { color: var(--danger); }
+  form input[type=text], form input[type=password], form select, form textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; background: #fff; color: var(--ink);
+  }
+  form textarea { min-height: 220px; resize: vertical; line-height: 1.6; }
+  form textarea.small { min-height: 100px; }
+  form input:focus, form select:focus, form textarea:focus { outline: 2px solid var(--primary); border-color: var(--primary); }
+  .hint { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .counter { font-size: .78rem; color: var(--muted); text-align: right; margin-top: 2px; }
+  .counter.ok { color: #059669; font-weight: 600; }
+  .counter.warn { color: #b45309; font-weight: 600; }
+  .counter.bad { color: var(--danger); font-weight: 600; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+
+  .callout { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 12px 14px; font-size: .9rem; margin-top: 14px; line-height: 1.6; }
+  .callout b { color: #92400e; }
+
+  .poem-item { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 12px; background: #fbfdfd; }
+  .poem-item h4 { color: var(--primary-2); font-size: 1.05rem; }
+  .poem-item .meta { font-size: .82rem; color: var(--muted); margin: 4px 0 8px; }
+  .poem-item pre { font-family: inherit; white-space: pre-wrap; line-height: 1.6; background: #fff; border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; max-height: 240px; overflow: auto; font-size: .92rem; }
+  .poem-item .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+  table.rekap { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .88rem; }
+  table.rekap th, table.rekap td { border: 1px solid var(--line); padding: 9px 10px; text-align: left; vertical-align: top; }
+  table.rekap th { background: #e0f2fe; color: var(--primary-2); font-size: .78rem; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+  table.rekap tr:hover td { background: #fafafa; }
+  /* Rekap tampil penuh tanpa scrollbar vertikal */
+  table.rekap td, table.rekap th { height: auto; max-height: none; overflow: visible; }
+  .td-actions { white-space: nowrap; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+  .toolbar input[type=search] { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; min-width: 220px; }
+  .toolbar select { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; background: #fff; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 12px; }
+  .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px; text-align: center; }
+  .stat .num { font-size: 1.6rem; font-weight: 800; color: var(--primary-2); }
+  .stat .lbl { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+
+  .modal-back { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto; }
+  .modal-back.open { display: flex; }
+  .modal { background: #fff; border-radius: 16px; width: 100%; max-width: 700px; padding: 22px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+  .modal h3 { margin-bottom: 6px; color: var(--primary-2); }
+  .modal .modal-actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; flex-wrap: wrap; }
+
+  .page { display: none; }
+  .page.active { display: block; }
+  footer.site { text-align: center; color: var(--muted); font-size: .85rem; padding: 30px 0 10px; }
+  code.token { background: #e0f2fe; border: 1px solid #7dd3fc; color: #075985; padding: 2px 8px; border-radius: 6px; font-weight: 700; letter-spacing: 1px; font-size: 1rem; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; background: #e0f2fe; border: 1px solid #7dd3fc; color: #075985; border-radius: 999px; padding: 6px 12px; font-size: .82rem; font-weight: 600; margin-top: 10px; }
+
+  /* ---------- Area cetak (print-friendly) ---------- */
+  #print-area { display: none; }
+  @media print {
+    @page { size: A4 landscape; margin: 1.4cm; }
+    body { background: #fff; }
+    header.site, nav.bottom, .sesi-box, .wrap, .modal-back, .toast { display: none !important; }
+    #print-area { display: block !important; color: #111; }
+    #print-area h1 { font-size: 16pt; text-align: center; margin: 0 0 2mm; }
+    #print-area .psub { text-align: center; font-size: 10pt; color: #333; margin: 0 0 5mm; }
+    #print-area .pstats { font-size: 9.5pt; margin: 0 0 4mm; }
+    #print-area table.ptable { width: 100%; border-collapse: collapse; font-size: 9pt; }
+    #print-area table.ptable th, #print-area table.ptable td { border: 0.6pt solid #555; padding: 4px 6px; text-align: left; vertical-align: top; }
+    #print-area table.ptable th { background: #e0f2fe; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .3px; }
+  #print-area .muted { color: #666; font-size: 8pt; }
+  #print-area .pfoot { margin-top: 5mm; font-size: 8.5pt; color: #555; }
+  #print-area .karts { display: flex; flex-wrap: wrap; gap: 4mm; }
+  #print-area .kart { width: 62mm; height: 40mm; border: 1.2pt solid #333; border-radius: 3mm; padding: 3mm 4mm; box-sizing: border-box; page-break-inside: avoid; display: flex; flex-direction: column; justify-content: space-between; }
+  #print-area .kart .kh { text-align: center; font-size: 9.5pt; font-weight: bold; border-bottom: 0.6pt solid #999; padding-bottom: 1.5mm; margin-bottom: 2mm; }
+  #print-area .kart .kn { font-size: 12.5pt; font-weight: bold; line-height: 1.25; }
+  #print-area .kart .kn small { display: block; font-size: 8pt; font-weight: normal; color: #555; }
+  #print-area .kart .ks { font-size: 10pt; margin-top: 1.5mm; }
+  #print-area .kart .ks b { font-size: 14pt; letter-spacing: 1px; }
+  #print-area .kart .kf { font-size: 7.5pt; color: #555; text-align: center; border-top: 0.4pt dashed #999; padding-top: 1.5mm; }
+    #print-area thead { display: table-header-group; }
+    #print-area tr { page-break-inside: avoid; }
+  }
+  table.log { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  table.log th, table.log td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; }
+  table.log th { background: #f8fafc; color: #475569; }
+
+  /* ---------- Banner pasang aplikasi ---------- */
+  #install-bar { position: fixed; bottom: calc(104px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: #0f172a; color: #fff; padding: 10px 12px 10px 18px; border-radius: 999px; display: none; gap: 10px; align-items: center; z-index: 55; box-shadow: 0 6px 20px rgba(0,0,0,.3); font-size: .9rem; max-width: 94vw; }
+  #install-bar.show { display: flex; }
+  #install-bar .btn { padding: 6px 12px; font-size: .82rem; }
+  #install-bar .btn.ghost { background: transparent; color: #cbd5e1; border: 1px solid #475569; }
+
+  /* ---------- Nyaman di HP ---------- */
+  @media (max-width: 640px) {
+    .wrap { padding: 14px 10px 116px; }
+    .card { padding: 16px 14px; }
+    .card h2 { font-size: 1.15rem; }
+    .card p, .card li { font-size: .95rem; }
+    nav.bottom a { flex-basis: 72px; padding: 5px 0 6px; }
+    nav.bottom a .ic { font-size: 19px; padding: 4px 12px; }
+    .sesi-box { max-width: 48%; padding: 4px 5px 4px 11px; }
+    .sesi-nama { font-size: .78rem; }
+    .head-row img { width: 44px; height: 44px; }
+    .head-row h1 { font-size: 1.05rem; }
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .btn { padding: 11px 16px; }
+    form input[type=text], form input[type=password], form select, form textarea { font-size: 16px; }
+    table.rekap { font-size: .82rem; }
+    .modal { padding: 16px; }
+    #install-bar span { font-size: .84rem; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <div class="head-row">
+      <img src="logo-sekolah.jpg" alt="Logo Sekolah">
+      <div>
+        <h1>Komunitas Yuk Menulis!</h1>
+        <div class="sub"><span class="utama">Format Kirim Karya Puisi Murid</span><br>Tema: &ldquo;Rukun dengan Teman&rdquo;</div>
+      </div>
+      <div class="sesi-box" id="sesi-box" style="display:none;">
+        <span class="sesi-nama" id="sesi-nama"></span>
+        <button type="button" class="sesi-keluar" id="btn-sesi-keluar" title="Keluar" aria-label="Keluar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="admin-keluar" id="admin-keluar" style="display:none;">
+        <span>Admin</span>
+        <button type="button" class="btn-adm-keluar" id="btn-admin-keluar" title="Keluar dari Admin" aria-label="Keluar dari Admin">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="bottom" id="nav-bottom">
+  <a href="#" data-nav="materi" class="active"><span class="ic">📖</span><span class="lb">Materi</span></a>
+  <a href="#" data-nav="kirim"><span class="ic">✍️</span><span class="lb">Kirim</span></a>
+  <a href="#" data-nav="galeri"><span class="ic">🖼️</span><span class="lb">Galeri</span></a>
+  <a href="#" data-nav="karyaku"><span class="ic">📚</span><span class="lb">Karya Saya</span></a>
+  <a href="#" data-nav="pasang" id="nav-pasang" style="display:none;"><span class="ic">📲</span><span class="lb">Pasang Aplikasi</span></a>
+  <a href="#" data-nav="admin" id="nav-admin"><span class="ic">🔐</span><span class="lb">Admin</span></a>
+</nav>
+
+<div class="wrap">
+
+  <!-- ================= HALAMAN: MATERI ================= -->
+  <section id="page-materi" class="page active">
+    <div class="card">
+      <span class="pill gold">POIN-POIN MATERI KYM</span>
+      <h2 style="margin-top:10px;">Poin-Poin Materi KYM — Tema &ldquo;Rukun dengan Teman&rdquo;</h2>
+
+      <div class="q" style="border-top:none; padding-top:0;">
+        <div class="tag">Poin 1</div>
+        <h3>Apakah semua GTK juga harus menulis puisi?</h3>
+        <p>Tentu akan sangat baik apabila Bapak/Ibu GTK berkenan ikut menulis. Justru ketika guru ikut berkarya, anak-anak akan melihat bahwa literasi bukan hanya sesuatu yang diperintahkan kepada siswa, tetapi juga sesuatu yang dilakukan bersama-sama.</p>
+        <p>Namun, apabila tidak semua GTK dapat menulis, tidak apa-apa. Yang terpenting, setiap sekolah mengikutsertakan minimal <b>50 penulis</b> agar sekolah dapat mengikuti event ini sesuai ketentuan.</p>
+        <p>Untuk setiap peserta, minimal mengirimkan <b>1 puisi</b>. Jika ada peserta yang ingin mengirimkan 2 puisi, tentu diperbolehkan. Namun, mohon puisi pertama dan puisi kedua dibuat dalam file yang berbeda, agar lebih mudah dalam proses pengecekan dan pengolahan naskah.</p>
+        <h3>Jadi, sederhananya:</h3>
+        <ul>
+          <li>Minimal <b>50 penulis</b> dalam 1 sekolah.</li>
+          <li>Setiap penulis minimal <b>1 puisi</b>.</li>
+          <li>Jika ingin mengirimkan 2 puisi, diperbolehkan.</li>
+          <li>Jika mengirimkan 2 puisi, masing-masing puisi dibuat dalam file terpisah.</li>
+        </ul>
+        <p>Semoga semakin banyak GTK yang berkenan ikut menulis, karena barangkali dari keteladanan kecil Bapak/Ibu hari ini, akan tumbuh anak-anak yang kelak mencintai dunia literasi.</p>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 2</div>
+        <h3>Karya yang kami harapkan</h3>
+        <p>Bapak/Ibu, dalam kegiatan ini kami tidak sedang mencari karya yang paling sempurna. Kami juga tidak berharap semua anak tiba-tiba mampu menghasilkan puisi seperti seorang penyair.</p>
+        <p>Yang paling kami perhatikan adalah karya tersebut <b>asli, sesuai tema</b>, tidak mengandung plagiarisme, tidak berisi ujaran kebencian, penghinaan, bullying, diskriminasi, atau SARA, serta sudah ditulis dengan sungguh-sungguh oleh peserta.</p>
+        <p>Untuk kualitas dan kelayakan secara umum, kami sangat mempercayakan kepada Bapak/Ibu di sekolah. Bapak/Ibu-lah yang setiap hari bersama anak-anak, memahami kemampuan mereka, mengetahui proses mereka menulis, dan dapat melihat apakah sebuah karya memang sudah layak untuk dibawa ke tahap berikutnya.</p>
+        <p>Itulah mengapa dalam kegiatan ini ada <b>guru koordinator, guru editor, dan tim literasi sekolah</b>. Kehadiran Bapak/Ibu bukan sekadar membantu mengumpulkan karya, tetapi juga menjadi bagian penting dalam memastikan karya yang dikirim sudah melalui proses pendampingan di sekolah.</p>
+        <p>Jadi, tidak perlu merasa bahwa setiap puisi harus sempurna sebelum dikirim. Biarkan anak-anak tumbuh melalui proses menulisnya. Kalau ada kekurangan kecil dalam pilihan kata atau cara penyampaian, itu bagian dari proses belajar. Yang penting, karya tersebut merupakan karya mereka sendiri dan sudah mendapatkan pendampingan dari Bapak/Ibu.</p>
+        <p>Dengan adanya guru koordinator, guru editor, dan tim literasi sekolah, kami justru merasa lebih tenang. Insyaallah, Bapak/Ibu yang paling tahu kondisi dan kemampuan siswa masing-masing. Kami percaya, karya yang sudah melalui proses pendampingan di sekolah adalah karya yang layak untuk kemudian kami proses bersama di KYM.</p>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 3</div>
+        <h3>Jumlah baris puisi</h3>
+        <p>Idealnya, puisi terdiri dari <b>12&ndash;15 baris</b>. Namun, kami memahami bahwa kemampuan dan kondisi setiap peserta berbeda-beda.</p>
+        <p>Untuk siswa SD, puisi boleh minimal 8 baris. Sementara itu, jika ada kondisi tertentu atau peserta mengalami kesulitan menghentikan proses menulis karena gagasan yang sedang dituangkan masih mengalir, masih diperbolehkan hingga maksimal 20 baris.</p>
+        <p>Jadi, mohon tidak menjadikan 20 baris sebagai target. Justru kami berharap anak-anak belajar menulis dengan ringkas dan mampu menyampaikan gagasannya dengan baik.</p>
+        <h3>Prinsipnya adalah:</h3>
+        <ul>
+          <li>Ideal: <b>12&ndash;15 baris</b></li>
+          <li>SD: boleh minimal <b>8 baris</b></li>
+          <li>Kondisi tertentu: maksimal <b>20 baris</b></li>
+        </ul>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 4</div>
+        <h3>Profil penulis</h3>
+        <p>Untuk profil penulis, profil tersebut diletakkan di bawah puisi, setelah puisi selesai. Profil ditulis dalam bentuk <b>paragraf/kalimat</b>, bukan dalam bentuk poin-poin, dengan panjang maksimal 5 baris.</p>
+        <h3>Contohnya:</h3>
+        <p><i>&ldquo;Aisyah Putri merupakan siswi kelas V SD Negeri 99 Sidoarjo. Ia senang membaca dan menulis cerita sederhana. Selain belajar, Aisyah juga aktif mengikuti kegiatan sekolah dan gemar bermain bersama teman-temannya.&rdquo;</i></p>
+        <p>Profil tidak perlu terlalu panjang. Cukup beberapa kalimat yang mengenalkan penulis secara singkat.</p>
+        <div class="callout"><b>Catatan:</b> Untuk murid tidak ada bio narasi &mdash; cukup nama, sekolah, judul, dan isi puisi.</div>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 5</div>
+        <h3>Format penulisan naskah</h3>
+        <p>Untuk format penulisan naskah menggunakan ketentuan berikut:</p>
+        <ul>
+          <li>Ukuran kertas: <b>A4</b></li>
+          <li>Font: <b>Times New Roman</b></li>
+          <li>Ukuran font: <b>12 pt</b></li>
+          <li>Margin: <b>4-3-4-3 cm</b> (atas 4, kanan 3, bawah 4, kiri 3)</li>
+          <li>Spasi: <b>1,5</b></li>
+          <li>Profil penulis: maksimal 5 baris, ditulis dalam bentuk kalimat/paragraf.</li>
+        </ul>
+        <p>Mohon menggunakan format tersebut agar naskah yang masuk lebih seragam dan memudahkan tim KYM dalam proses pengecekan serta layout.</p>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 6</div>
+        <h3>Tahapan pengumpulan naskah</h3>
+        <p>Untuk pengumpulan naskah, kami membaginya menjadi dua tahap:</p>
+        <div class="steps">
+          <div class="step"><div class="n">1</div><div><b>Tahap 1: maksimal 26 September 2026.</b> Kami sangat berharap Bapak/Ibu dapat mengupayakan agar sebagian besar naskah sudah masuk pada tahap 1, yaitu 26 September.</div></div>
+          <div class="step"><div class="n">2</div><div><b>Tahap 2: maksimal 10 Oktober 2026.</b> Deadline tahap 2 tetap tersedia bagi yang memang membutuhkan waktu tambahan, tetapi jangan sampai justru semua menunggu sampai batas terakhir.</div></div>
+        </div>
+        <p>Mohon jangan semuanya menunggu hingga deadline tahap 2. Mengapa? Karena proses penyusunan dan jilid akan diberikan secara berurutan berdasarkan urutan masuknya naskah awal. Jadi, semakin awal naskah sekolah dikumpulkan, insyaallah semakin awal pula dapat kami proses ke tahap berikutnya.</p>
+        <p>Tidak perlu menunggu semua kegiatan di sekolah selesai jika sebagian karya sudah siap. Yang sudah siap dan sudah melalui pengecekan dapat segera dikirimkan. Mari kita upayakan tahap 1 semaksimal mungkin.</p>
+        <p>Terima kasih, Bapak/Ibu, atas kerja sama dan bantuannya.</p>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 7</div>
+        <h3>Struktur tulisan puisi</h3>
+        <ul>
+          <li><b>JUDUL PUISI HURUF BESAR</b></li>
+          <li>Nama Penulis</li>
+          <li>Nama Sekolah</li>
+          <li>Isi Puisi 10&ndash;20 baris (bait bebas)</li>
+          <li>Biodata narasi 2&ndash;5 kalimat pendek (maksimal 5 baris) &mdash; <b>untuk murid tidak ada</b></li>
+        </ul>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 8</div>
+        <h3>Ketentuan tulisan &amp; penamaan file</h3>
+        <ul>
+          <li>Font: <b>TNR 12</b></li>
+          <li>Spasi: <b>1.5</b></li>
+          <li>Margin: <b>4-3-4-3</b></li>
+          <li>Kertas: <b>A4</b></li>
+          <li>File: <b>Word</b></li>
+          <li>Nama file: <code>SDN_GuruPJ_NamaSekolah_JumlahPenulis</code></li>
+        </ul>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 9</div>
+        <h3>Pengumpulan file Word tanpa layout</h3>
+        <p>Untuk pengumpulan karya, Bapak/Ibu cukup mengumpulkan file tulisan dalam bentuk <b>Word sesuai template</b> yang sudah kami berikan. Tidak perlu melakukan layout sendiri.</p>
+        <p>Setelah karya dikirim dan dinyatakan sudah sesuai, proses layout, penataan halaman, dan persiapan buku akan dikerjakan oleh <b>tim KYM</b>. Jadi Bapak/Ibu tidak perlu repot memikirkan desain halaman atau tata letak buku. Fokus saja pada memastikan:</p>
+        <ul>
+          <li>Nama penulis sudah benar dan lengkap.</li>
+          <li>Asal sekolah/lembaga sudah benar.</li>
+          <li>Judul dan isi puisi sudah final.</li>
+          <li>Karya sesuai tema <b>&ldquo;Rukun dengan Teman&rdquo;</b>.</li>
+          <li>Karya merupakan tulisan asli dan tidak plagiasi.</li>
+          <li>File Word dikirim sesuai template.</li>
+        </ul>
+        <p>Setelah itu, biarkan tim KYM yang melanjutkan prosesnya. Insyaallah, setelah masuk ke tim kami, karya akan kami proses satu per satu hingga menjadi bagian dari buku.</p>
+        <p>Bismillah, kita mudahkan bersama agar guru dan siswa bisa lebih fokus pada hal yang paling penting: <b>berani menulis dan berkarya</b>.</p>
+      </div>
+
+      <div class="q">
+        <div class="tag">Poin 10</div>
+        <h3>Penutup</h3>
+        <p>Jika masih ada hal yang belum dipahami atau ada pertanyaan yang ingin disampaikan, silakan sampaikan melalui guru pendamping di sekolah masing-masing.</p>
+        <p style="margin-top:16px;"><a href="#" class="btn" data-nav="kirim">✍️ Langsung Kirim Puisi</a></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HALAMAN: KIRIM PUISI ================= -->
+  <section id="page-kirim" class="page">
+    <div class="card">
+      <h2>✍️ Kirim Puisi</h2>
+      <p class="muted">Login dulu dengan data diri Anda, lalu isi formulir kirim puisi. Karya yang sudah dikirim dapat dilihat, diedit, atau dihapus kapan saja di menu <b>Karya Saya</b> — tanpa perlu kode apa pun.</p>
+
+      <!-- LOGIN PENGIRIM -->
+      <div id="login-box" style="border:1px solid #bae6fd; border-radius:12px; padding:16px; background:#f0f9ff; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+          <button type="button" id="tab-murid" class="btn secondary" style="flex:1;">👩‍🎓 Murid</button>
+          <button type="button" id="tab-guru" class="btn secondary" style="flex:1;">👨‍🏫 Guru / Tendik (GTK)</button>
+        </div>
+
+        <form id="form-login-murid" autocomplete="off">
+          <div class="row">
+            <div>
+              <label>Kelas <span class="req">*</span></label>
+              <select id="l-kelas">
+                <option value="3">Kelas III (Tiga)</option>
+                <option value="4">Kelas IV (Empat)</option>
+                <option value="5">Kelas V (Lima)</option>
+                <option value="6">Kelas VI (Enam)</option>
+              </select>
+            </div>
+            <div>
+              <label>Nama Lengkap <span class="req">*</span></label>
+              <select id="l-nama"></select>
+            </div>
+          </div>
+          <label>Kata Sandi = NIS (Nomor Induk Siswa) <span class="req">*</span></label>
+          <input type="password" id="l-pass" required placeholder="Tulis NIS Anda, cth: 3270">
+          <div class="hint">Kata sandi murid adalah <b>NIS (Nomor Induk Siswa)</b> yang diberikan sekolah.</div>
+          <div style="margin-top:14px;"><button type="submit" class="btn">🔐 Masuk sebagai Murid</button></div>
+        </form>
+
+        <form id="form-login-guru" style="display:none;" autocomplete="off">
+          <label>Nama Lengkap <span class="req">*</span></label>
+          <input type="text" id="g-nama" required maxlength="80" placeholder="Nama sesuai saat mendaftar">
+          <label>Kata Sandi <span class="req">*</span></label>
+          <input type="password" id="g-pass" required>
+          <div style="margin-top:14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <button type="submit" class="btn">🔐 Masuk sebagai GTK</button>
+            <span class="muted">Belum punya akun? <a href="#" id="link-daftar"><b>Daftar di sini</b></a></span>
+          </div>
+        </form>
+
+        <form id="form-daftar-guru" style="display:none;" autocomplete="off">
+          <p class="muted" style="margin:0 0 10px;"><b>Pendaftaran akun GTK</b> — untuk guru/tendik yang akan mengirim puisi. Akun tersimpan di perangkat ini.</p>
+          <label>Nama Lengkap <span class="req">*</span></label>
+          <input type="text" id="gd-nama" required maxlength="80" placeholder="cth: Budi Santoso">
+          <label>Kata Sandi <span class="req">*</span> <span class="muted">(min. 4 karakter)</span></label>
+          <input type="password" id="gd-pass" required minlength="4">
+          <label>Ulangi Kata Sandi <span class="req">*</span></label>
+          <input type="password" id="gd-pass2" required>
+          <div style="margin-top:14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <button type="submit" class="btn">📝 Daftar &amp; Masuk</button>
+            <span class="muted">Sudah punya akun? <a href="#" id="link-login-guru"><b>Masuk di sini</b></a></span>
+          </div>
+        </form>
+      </div>
+
+      <div id="user-chip" style="display:none; align-items:center; gap:10px; flex-wrap:wrap; border:1px solid #bae6fd; border-radius:12px; padding:12px 16px; background:#e0f2fe; margin-bottom:12px; font-weight:600; color:#075985;"></div>
+
+      <div id="form-kirim-wrap" style="display:none;">
+      <div id="aksi-toolbar" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button type="button" class="btn small" id="tb-baru">✍️ Tulis Baru</button>
+        <button type="button" class="btn secondary small" id="tb-edit">✏️ Edit Karya</button>
+        <button type="button" class="btn secondary small" id="tb-hapus">🗑️ Hapus Karya</button>
+        <button type="button" class="btn secondary small" id="tb-kirim">📤 Kirim Puisi</button>
+      </div>
+      <div id="aksi-chooser" style="display:none; border:1px solid #bae6fd; border-radius:12px; padding:14px; background:#f0f9ff; margin-bottom:14px;"></div>
+      <form id="form-kirim" autocomplete="off">
+        <div class="row">
+          <div>
+            <label>Nama Penulis <span class="req">*</span></label>
+            <input type="text" id="f-nama" required maxlength="80" readonly style="background:#e0f2fe; color:#0369a1; font-weight:600; cursor:not-allowed;">
+            <div class="hint">Terisi otomatis dari akun yang login.</div>
+          </div>
+          <div>
+            <label>Kelas <span class="req">*</span></label>
+            <input type="text" id="f-kelas" required readonly style="background:#e0f2fe; color:#0369a1; font-weight:600; cursor:not-allowed;">
+          </div>
+        </div>
+        <label>Nama Sekolah</label>
+        <input type="text" id="f-sekolah" value="SD Negeri Semambung" readonly style="background:#e0f2fe; color:#0369a1; font-weight:600; cursor:not-allowed;">
+        <div class="hint" style="margin-top:6px;">Jenjang peserta: <b>SD</b></div>
+
+        <label>Judul Puisi <span class="req">*</span></label>
+        <input type="text" id="f-judul" required maxlength="120" placeholder="cth: SAHABAT KECILKU">
+
+        <label>Isi Puisi <span class="req">*</span></label>
+        <textarea id="f-isi" required placeholder="Tulis bait demi bait di sini. Setiap baris pada baris baru (Enter)."></textarea>
+        <div class="counter" id="count-isi">0 baris</div>
+        <div class="hint">Ideal 12&ndash;15 baris &middot; SD minimal 8 baris &middot; maksimal 20 baris (kondisi tertentu).</div>
+
+        <div id="profil-wrap">
+          <label>Profil Penulis (bio narasi) <span class="muted">— wajib untuk GTK</span></label>
+          <textarea id="f-profil" class="small" placeholder="2–5 kalimat, maksimal 5 baris."></textarea>
+          <div class="hint">Murid tidak perlu mengisi profil. GTK menulis 2&ndash;5 kalimat pengenalan diri.</div>
+        </div>
+
+        <label style="display:flex; align-items:flex-start; gap:8px; font-weight:500; margin-top:16px;">
+          <input type="checkbox" id="f-setuju" required style="width:auto; margin-top:4px;">
+          <span>Saya menyatakan bahwa puisi ini <b>karya asli</b>, sesuai tema <b>&ldquo;Rukun dengan Teman&rdquo;</b>, tidak mengandung plagiarisme, ujaran kebencian, penghinaan, bullying, diskriminasi, atau SARA.</span>
+        </label>
+
+        <div style="margin-top:18px;">
+          <button type="submit" class="btn">🚀 Kirim Puisi</button>
+          <button type="reset" class="btn secondary">Bersihkan</button>
+        </div>
+      </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HALAMAN: GALERI PUISI ================= -->
+  <section id="page-galeri" class="page">
+    <div class="card">
+      <h2>🖼️ Galeri Puisi Murid</h2>
+      <p class="muted">Kumpulan karya puisi yang telah dikirim oleh murid-murid kita. Pencipta: pembaca karya teman dengan sopan!</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0;">
+        <input type="text" id="g-cari" placeholder="🔍 Cari judul, nama, atau isi puisi…" style="flex:1; min-width:220px; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+        <select id="g-kelas" style="padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+          <option value="">Semua Kelas</option>
+          <option value="Kelas III (Tiga)">Kelas III (Tiga)</option>
+          <option value="Kelas IV (Empat)">Kelas IV (Empat)</option>
+          <option value="Kelas V (Lima)">Kelas V (Lima)</option>
+          <option value="Kelas VI (Enam)">Kelas VI (Enam)</option>
+        </select>
+        <span class="muted" id="g-jumlah"></span>
+      </div>
+      <div id="galeri-list"></div>
+    </div>
+  </section>
+
+  <!-- ================= HALAMAN: KARYA SAYA ================= -->
+  <section id="page-karyaku" class="page">
+    <div class="card">
+      <h2>📚 Karya Saya</h2>
+      <p class="muted">Semua karya yang Anda kirim dari akun ini tampil otomatis di bawah — bisa diedit atau dihapus kapan saja.</p>
+      <div id="saved-token-chip"></div>
+      <div id="karyaku-result"></div>
+    </div>
+  </section>
+
+  <!-- ================= HALAMAN: ADMIN ================= -->
+  <section id="page-admin" class="page">
+    <div class="card">
+      <h2>🔐 Admin — Rekap Karya Puisi</h2>
+
+      <div id="admin-login">
+        <p class="muted">Masukkan password admin untuk melihat rekap seluruh karya puisi murid.</p>
+        <form id="form-admin-login" style="margin-top:14px; max-width:360px;" autocomplete="off">
+          <label>Password Admin</label>
+          <input type="password" id="in-pass" placeholder="Password">
+          <div style="margin-top:12px;">
+            <button type="submit" class="btn">Masuk</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="admin-panel" style="display:none;">
+        <div class="stat-grid">
+          <div class="stat"><div class="num" id="st-total">0</div><div class="lbl">Total Karya</div></div>
+          <div class="stat"><div class="num" id="st-penulis">0</div><div class="lbl">Penulis Unik</div></div>
+          <div class="stat"><div class="num" id="st-tahap1">0</div><div class="lbl">Tahap 1</div></div>
+          <div class="stat"><div class="num" id="st-tahap2">0</div><div class="lbl">Tahap 2</div></div>
+          <div class="stat"><div class="num" id="st-gtk">0</div><div class="lbl">GTK</div></div>
+          <div class="stat"><div class="num" id="st-siswa">0</div><div class="lbl">Siswa</div></div>
+        </div>
+
+        <div class="toolbar">
+          <input type="search" id="q-rekap" placeholder="Cari nama, judul, sekolah…">
+          <select id="q-jenjang" disabled title="Jenjang peserta: SD" style="background:#e0f2fe; color:#0369a1; font-weight:600; cursor:not-allowed;">
+            <option value="" selected>SD (jenjang tetap)</option>
+          </select>
+          <button class="btn" id="btn-word">⬇️ Unduh Semua (Word)</button>
+          <button class="btn secondary" id="btn-csv">⬇️ Unduh CSV</button>
+          <button class="btn secondary" id="btn-print">🖨️ Cetak Rekap</button>
+          <button class="btn secondary" id="btn-buka-galeri" data-nav="galeri" title="Buka halaman Galeri Puisi">🖼️ Buka Galeri</button>
+          <button class="btn secondary" id="btn-link-pasang" title="Salin link pemasangan aplikasi untuk dikirim ke murid">🔗 Link Pasang</button>
+          <button class="btn secondary" id="btn-export">💾 Backup JSON</button>
+          <button class="btn secondary" id="btn-import">📂 Impor JSON</button>
+          <input type="file" id="file-import" accept=".json" style="display:none;">
+        </div>
+
+        <div class="q" style="border-top:2px solid #bfdbfe;">
+          <h3>🗄️ File Database (JSON)</h3>
+          <p class="muted">Jadikan file <code>.json</code> di komputer Anda sebagai database: setiap perubahan (kirim, edit, hapus) langsung tersimpan ke file secara otomatis. Buka file kapan saja dengan Excel/editor teks, atau pindahkan ke komputer lain.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+            <button class="btn" id="btn-db-connect">🔗 Hubungkan File Database</button>
+            <button class="btn secondary" id="btn-db-download">⬇️ Unduh Database JSON</button>
+            <button class="btn secondary" id="btn-db-xlsx" title="Ekspor Excel: sheet Karya, Log, dan Ringkasan">📊 Unduh Excel (.xlsx)</button>
+            <button class="btn secondary" id="btn-db-open">📂 Pulihkan dari File…</button>
+            <input type="file" id="file-db-open" accept=".json,application/json" style="display:none;">
+            <button class="btn secondary small" id="btn-db-unlink" style="display:none;">🔌 Lepas File</button>
+          </div>
+          <div class="muted" id="db-status" style="margin-top:10px;">Mode saat ini: localStorage browser. Belum ada file database terhubung.</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+            <label style="margin:0; font-weight:500; font-size:.88rem;">
+              <input type="checkbox" id="db-merge" style="width:auto; margin-right:6px;"> Gabungkan (merge) saat memulihkan — centang untuk menambah, kosongkan untuk menimpa seluruh data
+            </label>
+          </div>
+          <div class="callout" style="background:#eff6ff; border-color:#93c5fd; margin-top:12px;"><b style="color:#1e40af;">💾 Backup:</b> unduh database JSON secara berkala dan simpan di tempat aman (Drive/flashdisk). <b style="color:#1e40af;">♻️ Restore:</b> gunakan "Pulihkan dari File…" di komputer mana pun untuk memuat seluruh data kembali.</div>
+        </div>
+
+        <div class="q" style="border-top:2px solid #a7f3d0;">
+          <h3>☁️ Integrasi Google Sheets</h3>
+          <p class="muted">Hubungkan web ini ke Google Spreadsheet pusat agar semua kiriman dari perangkat mana pun terkumpul di satu tempat. Ikuti panduan sekali setup (±3 menit).</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+            <input type="text" id="gas-url" placeholder="Tempel Web App URL (…/exec)" style="flex:1; min-width:260px; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+            <button class="btn" id="btn-gas-save">🔌 Simpan &amp; Test Koneksi</button>
+            <button class="btn secondary" id="btn-gas-guide">📖 Panduan &amp; Kode</button>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+            <button class="btn secondary" id="btn-gas-pull">🔄 Tarik dari Sheets</button>
+            <button class="btn secondary" id="btn-gas-push">⬆️ Dorong Semua ke Sheets</button>
+            <button class="btn secondary" id="btn-gas-header">📋 Cek Header Spreadsheet</button>
+            <button class="btn secondary" id="btn-gas-retry" style="display:none;">📮 Kirim Ulang Antrean (<span id="gas-outbox-n">0</span>)</button>
+            <span class="muted" id="gas-status">Belum terhubung.</span>
+          </div>
+          <div id="gas-header-box" style="display:none; margin-top:12px; padding:14px; border:1px solid #bae6fd; border-radius:10px; background:#f0f9ff; overflow-x:auto;">
+            <div style="font-weight:600; font-size:.9rem; margin-bottom:8px;" id="gas-header-title"></div>
+            <table style="border-collapse:collapse; font-size:.82rem; width:100%;">
+              <tbody id="gas-header-body"></tbody>
+            </table>
+            <div class="muted" id="gas-header-note" style="font-size:.8rem; margin-top:8px;"></div>
+          </div>
+        </div>
+
+        <div class="q">
+          <h3>Rekap Karya <span class="muted" id="rekap-n" style="font-weight:500; font-size:.85rem;"></span></h3>
+          <div style="overflow-x:auto;">
+            <table class="rekap">
+              <thead>
+                <tr>
+                  <th>No</th><th>Karya</th><th>Penulis</th><th>Kelas · Sekolah</th>
+                  <th>Baris</th><th>Tahap</th><th>Terkirim</th><th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-rekap"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="q">
+          <h3>👥 Rekap Kirim Murid <span class="muted" id="rm-n" style="font-weight:500; font-size:.85rem;"></span></h3>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0;">
+            <select id="rm-kelas" style="padding:8px 10px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+              <option value="">Semua Kelas</option>
+              <option value="3">Kelas III (Tiga)</option>
+              <option value="4">Kelas IV (Empat)</option>
+              <option value="5">Kelas V (Lima)</option>
+              <option value="6">Kelas VI (Enam)</option>
+            </select>
+            <select id="rm-status" style="padding:8px 10px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+              <option value="">Semua Status</option>
+              <option value="belum">⬜ Belum Mengirim</option>
+              <option value="sudah">✅ Sudah Mengirim</option>
+            </select>
+            <input type="text" id="rm-cari" placeholder="🔍 Cari nama atau NIS…" style="flex:1; min-width:180px; padding:8px 10px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+            <button class="btn secondary" id="btn-cetak-kartu">🪪 Cetak Kartu Kata Sandi</button>
+          </div>
+          <div id="rm-stats" style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:.92rem;"></div>
+          <div style="overflow-x:auto;">
+            <table class="rekap">
+              <thead>
+                <tr>
+                  <th>No</th><th>NIS</th><th>Nama Murid</th><th>Kelas</th><th>Karya</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-rm"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="q">
+          <h3>Riwayat Log Aktivitas</h3>
+          <div style="overflow-x:auto;">
+            <table class="log">
+              <thead><tr><th>Waktu</th><th>Aksi</th><th>Karya</th><th>Oleh</th></tr></thead>
+              <tbody id="tbody-log"></tbody>
+            </table>
+          </div>
+          <div class="toolbar">
+            <button class="btn danger small" id="btn-clear-all">🗑️ Hapus Semua Data</button>
+            <button class="btn secondary small" id="btn-change-pass">🔑 Ganti Password Admin</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /wrap -->
+
+<!-- ================= MODAL EDIT ================= -->
+<div class="modal-back" id="modal-back">
+  <div class="modal">
+    <h3 id="modal-title">Edit Karya</h3>
+    <p class="muted" id="modal-sub">Perbarui data karya puisi, lalu tekan Simpan.</p>
+    <form id="modal-form" autocomplete="off">
+      <div class="row">
+        <div>
+          <label>Nama Lengkap Penulis <span class="req">*</span></label>
+          <input type="text" id="m-nama" required maxlength="80">
+        </div>
+        <div>
+          <label>Jenjang</label>
+          <input type="text" id="m-jenjang" value="SD" readonly style="background:#e0f2fe; color:#0369a1; font-weight:600; cursor:not-allowed;">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Kelas <span class="req">*</span></label>
+          <select id="m-kelas" required>
+            <option value="Kelas III (Tiga)">Kelas III (Tiga)</option>
+            <option value="Kelas IV (Empat)">Kelas IV (Empat)</option>
+            <option value="Kelas V (Lima)">Kelas V (Lima)</option>
+            <option value="Kelas VI (Enam)">Kelas VI (Enam)</option>
+          </select>
+        </div>
+        <div>
+          <label>Nama Sekolah</label>
+          <input type="text" id="m-sekolah" value="SD Negeri Semambung" readonly style="background:#e0f2fe; color:#0369a1; font-weight:600; cursor:not-allowed;">
+        </div>
+      </div>
+      <label>Judul Puisi <span class="req">*</span></label>
+      <input type="text" id="m-judul" required maxlength="120">
+      <label>Isi Puisi <span class="req">*</span></label>
+      <textarea id="m-isi" required></textarea>
+      <div class="counter" id="count-m-isi"></div>
+      <label>Profil Penulis (bio narasi — untuk GTK)</label>
+      <textarea id="m-profil" class="small"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="modal-cancel">Batal</button>
+        <button type="submit" class="btn">💾 Simpan Perubahan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ================= MODAL PANDUAN GOOGLE SHEETS ================= -->
+<div class="modal-back" id="guide-back">
+  <div class="modal" style="max-width:820px;">
+    <h3>📖 Panduan Integrasi Google Sheets</h3>
+    <ol style="margin:10px 0 14px 22px; line-height:1.9; font-size:.92rem;">
+      <li>Buat Spreadsheet baru di <b>sheets.new</b>, beri nama misal <i>“KYM — Data Puisi”</i>.</li>
+      <li>Menu <b>Ekstensi → Apps Script</b>, hapus kode contoh, lalu tempel seluruh kode di bawah.</li>
+      <li>Klik <b>Deploy → New deployment → Web app</b>. Atur: <i>Execute as: Me</i>, <i>Who has access: Anyone</i>, lalu <b>Deploy</b> dan izinkan akses akun Google.</li>
+      <li>Salin <b>Web app URL</b> (berakhiran <code>/exec</code>), tempel di kolom URL di panel admin, klik <b>Simpan &amp; Test Koneksi</b>.</li>
+      <li>Selesai! Semua kiriman dari perangkat mana pun otomatis masuk ke tab <b>“Puisi”</b> di spreadsheet Anda.</li>
+    </ol>
+    <p class="muted" style="margin-bottom:6px;">Catatan: jika kode Apps Script diubah, lakukan <b>Deploy → Manage deployments → edit → New version</b>.</p>
+    <pre id="gas-code" style="background:#0f172a; color:#d1fae5; padding:14px; border-radius:10px; overflow:auto; max-height:340px; font-size:.78rem; line-height:1.5;"></pre>
+    <div class="modal-actions">
+      <button type="button" class="btn secondary" id="guide-copy">📋 Salin Kode Apps Script</button>
+      <button type="button" class="btn" id="guide-close">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= AREA CETAK REKAP ================= -->
+<div id="print-area"></div>
+
+<!-- ================= HALAMAN: PASANG APLIKASI (link #pasang) ================= -->
+<section id="page-pasang" class="page">
+  <div class="card" style="text-align:center;">
+    <span class="pill green">APLIKASI KYM</span>
+    <h2 style="margin-top:10px;">📲 Pasang Aplikasi Komunitas Yuk Menulis!</h2>
+    <p class="muted">Pasang di HP agar bisa dibuka seperti aplikasi sungguhan — tampil penuh layar, ada ikonnya di menu HP, dan tetap bisa dibuka tanpa internet.</p>
+    <div id="pasang-status" style="margin:14px 0;"></div>
+    <button class="btn" id="btn-pasang-sekarang" style="font-size:1.05rem; padding:14px 30px;">📲 Pasang Sekarang</button>
+    <div class="q" style="text-align:left; margin-top:22px;">
+      <h3>📱 Android (Chrome)</h3>
+      <p class="muted">1. Ketuk tombol <b>📲 Pasang Sekarang</b> di atas → ketuk <b>Pasang</b> saat muncul konfirmasi.<br>2. Jika tidak muncul: ketuk menu <b>⋮</b> di pojok kanan atas Chrome → <b>Tambahkan ke layar utama</b> → <b>Pasang</b>.<br>3. Ikon KYM muncul di layar utama HP — buka dari sana mulai sekarang.</p>
+      <h3>🍏 iPhone / iPad (Safari)</h3>
+      <p class="muted">Ketuk tombol <b>Bagikan</b> (kotak dengan panah ke atas) di bawah → gulir → <b>Tambahkan ke Layar Utama</b> → <b>Tambah</b>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BANNER PASANG APLIKASI (PWA) ================= -->
+<div id="install-bar">
+  <span>📲 Pasang aplikasi KYM di HP Anda</span>
+  <button class="btn" id="btn-install">Pasang</button>
+  <button class="btn ghost" id="btn-install-dismiss" title="Tutup">✕</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
