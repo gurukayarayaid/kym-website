@@ -567,7 +567,23 @@
     if (!a) return;
     e.preventDefault();
     showPage(a.getAttribute('data-nav'));
+    var hb = $('hamburger-popup'), btn = $('hamburger-btn');
+    if (hb) { hb.classList.remove('show'); btn.classList.remove('open'); }
   });
+
+  /* ---------- Hamburger menu ---------- */
+  (function () {
+    var btn = $('hamburger-btn'), popup = $('hamburger-popup'), wrap = $('hamburger-wrap');
+    if (!btn || !popup) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var opened = popup.classList.toggle('show');
+      btn.classList.toggle('open', opened);
+    });
+    document.addEventListener('click', function (e) {
+      if (!wrap.contains(e.target)) { popup.classList.remove('show'); btn.classList.remove('open'); }
+    });
+  })();
 
   /* ---------- Penghitung baris puisi ---------- */
   function bindCounter(taId, counterId, jenjangGetter) {
@@ -637,7 +653,7 @@
   /* ---------- Sesi di header (pojok kanan atas) + logout ---------- */
   function renderHeaderSesi() {
     var ses = getSession();
-    var box = $('sesi-box'), namaEl = $('sesi-nama'), adminNav = $('nav-admin'), adminKeluar = $('admin-keluar');
+    var box = $('sesi-box'), namaEl = $('sesi-nama'), adminNav = $('hamburger-admin'), adminKeluar = $('admin-keluar');
     updateGaleriNav();
     if (!box || !namaEl) return;
     if (ses) {

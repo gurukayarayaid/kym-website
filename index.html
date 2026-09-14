@@ -52,6 +52,23 @@
   nav.bottom a.active { color: var(--primary-2); }
   nav.bottom a.active .ic { background: var(--primary); }
 
+  /* Hamburger menu */
+  .hamburger-wrap { position: relative; flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .hamburger-btn { background: none; border: none; cursor: pointer; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; z-index: 52; }
+  .hamburger-btn span { display: block; width: 22px; height: 2.5px; background: var(--muted); border-radius: 2px; transition: transform .2s, opacity .2s; }
+  .hamburger-btn.open span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
+  .hamburger-btn.open span:nth-child(2) { opacity: 0; }
+  .hamburger-btn.open span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
+  .hamburger-popup { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.15); padding: 6px; min-width: 180px; display: none; z-index: 60; }
+  .hamburger-popup.show { display: block; }
+  .hamburger-item { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 8px; font-size: .88rem; font-weight: 600; color: var(--ink); white-space: nowrap; transition: background .12s; }
+  .hamburger-item:hover { background: var(--bg); }
+  .hamburger-item:active { background: #e0f2fe; }
+
+  @media (min-width: 640px) {
+    .hamburger-wrap { flex: 0 0 72px; }
+  }
+
   .card { background: var(--card); border-radius: var(--radius); padding: 22px; box-shadow: 0 1px 4px rgba(15,23,42,.06); margin-top: 22px; border: 1px solid var(--line); }
   .card h2 { color: var(--primary-2); margin-bottom: 12px; font-size: 1.3rem; }
   .card h3 { color: var(--primary-2); margin: 16px 0 8px; font-size: 1.05rem; }
@@ -220,12 +237,19 @@
 </header>
 
 <nav class="bottom" id="nav-bottom">
+  <div class="hamburger-wrap" id="hamburger-wrap">
+    <button type="button" class="hamburger-btn" id="hamburger-btn" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="hamburger-popup" id="hamburger-popup">
+      <a href="#" data-nav="kirim" class="hamburger-item">✍️ Kirim Puisi</a>
+      <a href="#" data-nav="karyaku" class="hamburger-item">📚 Karya Saya</a>
+      <a href="#" data-nav="admin" class="hamburger-item" id="hamburger-admin">🔐 Admin</a>
+    </div>
+  </div>
   <a href="#" data-nav="materi" class="active"><span class="ic">📖</span><span class="lb">Materi</span></a>
-  <a href="#" data-nav="kirim"><span class="ic">✍️</span><span class="lb">Kirim</span></a>
   <a href="#" data-nav="galeri"><span class="ic">🖼️</span><span class="lb">Galeri</span></a>
-  <a href="#" data-nav="karyaku"><span class="ic">📚</span><span class="lb">Karya Saya</span></a>
   <a href="#" data-nav="pasang" id="nav-pasang" style="display:none;"><span class="ic">📲</span><span class="lb">Pasang Aplikasi</span></a>
-  <a href="#" data-nav="admin" id="nav-admin"><span class="ic">🔐</span><span class="lb">Admin</span></a>
 </nav>
 
 <div class="wrap">
