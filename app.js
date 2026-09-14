@@ -681,8 +681,8 @@
     populateNama();
     $('l-kelas').addEventListener('change', populateNama);
     function showTab(which) {
-      $('tab-murid').classList.toggle('tab-active', which === 'murid');
-      $('tab-guru').classList.toggle('tab-active', which === 'guru');
+      $('tab-murid').classList.toggle('tab-murid-active', which === 'murid');
+      $('tab-guru').classList.toggle('tab-guru-active', which === 'guru');
       $('form-login-murid').style.display = which === 'murid' ? 'block' : 'none';
       $('form-login-guru').style.display = which === 'guru' ? 'block' : 'none';
       $('form-daftar-guru').style.display = which === 'daftar' ? 'block' : 'none';
@@ -692,8 +692,8 @@
     showTab('murid');
     $('link-daftar').addEventListener('click', function (e) {
       e.preventDefault();
-      $('tab-murid').classList.remove('tab-active');
-      $('tab-guru').classList.remove('tab-active');
+      $('tab-murid').classList.remove('tab-murid-active');
+      $('tab-guru').classList.remove('tab-guru-active');
       $('form-login-murid').style.display = 'none';
       $('form-login-guru').style.display = 'none';
       $('form-daftar-guru').style.display = 'block';
