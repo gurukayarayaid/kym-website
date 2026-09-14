@@ -657,7 +657,6 @@
     renderLoginUi();
     fCounter();
     showPage('materi');
-    toast('Anda telah keluar.');
   }
 
   function renderLoginUi() {
@@ -712,7 +711,6 @@
       if ($('l-pass').value.trim() !== s[0]) { toast('Kata sandi salah. Kata sandi murid = NIS.'); return; }
       setSession({ role: 'murid', nis: s[0], nama: s[1], kelasDigit: s[2] });
       renderLoginUi(); fCounter();
-      toast('Selamat datang, ' + s[1] + '!');
     });
     $('form-login-guru').addEventListener('submit', function (e) {
       e.preventDefault();
@@ -722,7 +720,6 @@
       if ($('g-pass').value !== g.pass) { toast('Kata sandi salah.'); return; }
       setSession({ role: 'guru', nama: g.nama });
       renderLoginUi(); fCounter();
-      toast('Selamat datang, ' + g.nama + '!');
     });
     /* ---------- Toolbar murid: Tulis Baru / Edit / Hapus / Kirim ---------- */
     function hideChooser() { $('aksi-chooser').style.display = 'none'; $('aksi-chooser').innerHTML = ''; }
@@ -779,7 +776,6 @@
       saveGuru(guru);
       setSession({ role: 'guru', nama: nama });
       renderLoginUi(); fCounter();
-      toast('Pendaftaran berhasil. Selamat datang, ' + nama + '!');
     });
     renderLoginUi();
   }
