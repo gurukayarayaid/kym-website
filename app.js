@@ -1045,7 +1045,6 @@
     if ($('in-pass').value === getPass()) {
       try { sessionStorage.setItem(LS_UNLOCK, '1'); } catch (err) {}
       $('in-pass').value = '';
-      toast('Selamat datang, Admin!');
       renderHeaderSesi();
       initAdmin();
     } else {
