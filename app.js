@@ -1852,6 +1852,7 @@
   var LS_CHAT = 'kym_chat_v1';
   var chatPollTimer = null;
   var _chatLastCount = 0;
+  console.log('[CHAT] module loaded, LS_CHAT=', LS_CHAT);
 
   /* --- Session helpers --- */
   function chatSession() {
