@@ -716,7 +716,10 @@
     chatFileLoad(fileId).then(function (dataUrl) {
       if (!dataUrl) { shiftChatFilePending(fileId); _chatFileUploading = false; pumpChatFileUpload(); return; }
       uploadChatFileChunks(fileId, dataUrl).then(function (ok) {
-        if (ok) shiftChatFilePending(fileId);
+        if (ok) {
+          shiftChatFilePending(fileId);
+          toast('📎 File terkirim — penerima bisa membuka.');
+        }
         _chatFileUploading = false;
         pumpChatFileUpload();
       });
@@ -730,7 +733,7 @@
     if (total > CHAT_FILE_MAX_CHUNKS) return Promise.resolve(false);
     var i = 0;
     function next() {
-      if (i >= total) return Promise.resolve(true);
+      if (i >= total) return verifyChatFileUpload(fileId, total);
       var chunk = dataUrl.substr(i * CHAT_FILE_CHUNK, CHAT_FILE_CHUNK);
       var idx = i; i++;
       return gasApi({ action: 'file_put', fileId: fileId, idx: idx, total: total, chunk: chunk })
@@ -738,6 +741,23 @@
         .catch(function () { return false; });
     }
     return next();
+  }
+  // Verifikasi ke server: pastikan semua chunk benar-benar tersimpan.
+  // Server lama (belum Deploy ulang) menjawab ok tanpa menyimpan → jangan hapus antrean.
+  function verifyChatFileUpload(fileId, total) {
+    return gasApi({ action: 'file_ids' }).then(function (res) {
+      if (!res || !Array.isArray(res.fileIds)) { noteFileServerOutdated(); return false; }
+      var found = res.fileIds.filter(function (f) { return f.fileId === fileId; })[0];
+      if (found && (found.count || 0) >= total) return true;
+      return false;
+    }).catch(function () { return false; });
+  }
+  var _fileServerWarnAt = 0;
+  function noteFileServerOutdated() {
+    var now = Date.now();
+    if (now - _fileServerWarnAt < 10 * 60 * 1000) return;
+    _fileServerWarnAt = now;
+    toast('⚠️ Server Sheets belum mendukung file — Admin: Panduan & Kode → Deploy → New version.');
   }
   var _chatFileDownloading = {};
   // Unduh file yang belum ada di IDB lokal (dipanggil tiap pull chat)
@@ -758,6 +778,7 @@
       need = need.filter(Boolean);
       if (!need.length) return 0;
       return gasApi({ action: 'file_ids' }).then(function (res) {
+        if (!res || !Array.isArray(res.fileIds)) { noteFileServerOutdated(); return 0; }
         var remote = {};
         (res.fileIds || []).forEach(function (f) { remote[f.fileId] = f.total || 0; });
         var jobs = need.filter(function (it) {
@@ -786,6 +807,42 @@
       delete _chatFileDownloading[fileId];
       return ok;
     }).catch(function () { delete _chatFileDownloading[fileId]; return false; });
+  }
+  // Perbaikan 1x per load: pesan ber-file milik sendiri yang memenuhi syarat online
+  // tapi tidak ada di server (mis. terkirim saat server lama) → masukkan antrean lagi
+  function repairChatFileUploads() {
+    if (!gasActive() || !online()) return Promise.resolve(0);
+    var own = loadChat().filter(function (m) {
+      return !m.deleted && m.file && m.file.name && (m.file.size || 0) <= CHAT_FILE_ONLINE_MAX;
+    });
+    if (!own.length) return Promise.resolve(0);
+    var pending = loadChatFilePending();
+    var cands = own.filter(function (m) {
+      var fid = m.file.msgId || m.id;
+      return pending.indexOf(fid) === -1;
+    });
+    if (!cands.length) return Promise.resolve(0);
+    return Promise.all(cands.map(function (m) {
+      var fid = m.file.msgId || m.id;
+      return chatFileLoad(fid).then(function (has) { return has ? fid : null; }).catch(function () { return null; });
+    })).then(function (withLocal) {
+      withLocal = withLocal.filter(Boolean);
+      if (!withLocal.length) return 0;
+      return gasApi({ action: 'file_ids' }).then(function (res) {
+        if (!res || !Array.isArray(res.fileIds)) { noteFileServerOutdated(); return 0; }
+        var remote = {};
+        res.fileIds.forEach(function (f) { remote[f.fileId] = f.count || 0; });
+        var reQ = 0;
+        withLocal.forEach(function (fid) {
+          if (!remote[fid]) {
+            var q = loadChatFilePending();
+            if (q.indexOf(fid) === -1) { q.push(fid); saveChatFilePending(q); reQ++; }
+          }
+        });
+        if (reQ) pumpChatFileUpload();
+        return reQ;
+      }).catch(function () { return 0; });
+    });
   }
   function mergeChatFromRemote(remoteChats) {
     if (!Array.isArray(remoteChats) || !remoteChats.length) return 0;
@@ -3133,12 +3190,26 @@
             slot.replaceWith(a);
           }
         } else {
-          // File tidak ditemukan di IndexedDB (perangkat lain)
+          // File belum ada di IndexedDB perangkat ini — coba unduh, ketuk untuk retry
           var noFile = document.createElement('div');
           noFile.className = 'chat-msg-file';
           noFile.style.opacity = '.6';
+          var tooBig = (m.file.size || 0) > CHAT_FILE_ONLINE_MAX;
+          var fid = m.file.msgId || m.id;
           noFile.innerHTML = '<span class="chat-msg-file-icon">' + fileIcon(m.file.type, m.file.name) + '</span>'
-            + '<span class="chat-msg-file-info"><span class="chat-msg-file-name">' + esc(m.file.name) + '</span><span class="chat-msg-file-size">' + fmtFileSize(m.file.size) + ' · File hanya tersedia di perangkat pengirim</span></span>';
+            + '<span class="chat-msg-file-info"><span class="chat-msg-file-name">' + esc(m.file.name) + '</span><span class="chat-msg-file-size">' + fmtFileSize(m.file.size)
+            + (tooBig ? ' · Hanya tersedia di perangkat pengirim' : ' · Belum diterima · ketuk untuk unduh') + '</span></span>';
+          if (!tooBig) {
+            noFile.style.cursor = 'pointer';
+            noFile.title = 'Ketuk untuk mengunduh file';
+            noFile.addEventListener('click', function () {
+              toast('⏳ Mengunduh file…');
+              downloadChatFile(fid).then(function (ok) {
+                if (ok) { refreshChatRoomIfOpen(); toast('📎 File diterima.'); }
+                else toast('⏳ File belum tersedia — coba lagi sebentar.');
+              });
+            });
+          }
           slot.replaceWith(noFile);
         }
       }).catch(function () {
@@ -3675,7 +3746,7 @@
       gasChatPull();
       flushOutbox();
       flushChatOutbox();
-      pumpChatFileUpload();
+      repairChatFileUploads().then(function () { pumpChatFileUpload(); });
     }
   }, 3000);
 
