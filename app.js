@@ -517,6 +517,42 @@
       return n;
     }).catch(function () { return 0; });
   }
+  // Silent auto-pull untuk puisi (tanpa toast, untuk timer otomatis)
+  function silentPoemPull() {
+    if (!gasActive() || !online()) return Promise.resolve(0);
+    return gasApi({ action: 'list' }).then(function (res) {
+      var remote = res.poems || [];
+      var local = loadPoems();
+      var map = {};
+      local.forEach(function (p) { map[p.code] = p; });
+      var added = 0, updated = 0;
+      remote.forEach(function (rp) {
+        var lp = map[rp.code];
+        if (!lp) { local.push(rp); added++; }
+        else {
+          var lt = new Date(lp.updatedAt || lp.time).getTime();
+          var rt = new Date(rp.updatedAt || rp.time).getTime();
+          if (rt > lt) { local[local.indexOf(lp)] = rp; updated++; }
+        }
+      });
+      if (added || updated) {
+        savePoems(local);
+        saveDbToFile();
+        // bersihkan outbox yang sudah ada di remote
+        var codes = {};
+        remote.forEach(function (p) { codes[p.code] = 1; });
+        saveOutbox(loadOutbox().filter(function (o) { return !codes[o.poem.code]; }));
+        // refresh tampilan jika relevan
+        var adminVisible = document.querySelector('#page-admin.active');
+        var galeriVisible = document.querySelector('#page-galeri.active');
+        var karyakuVisible = document.querySelector('#page-karyaku.active');
+        if (adminVisible) renderAdmin();
+        if (galeriVisible) renderGaleri();
+        if (karyakuVisible && getSession()) renderTokenChip();
+      }
+      return added + updated;
+    }).catch(function () { return 0; });
+  }
   function gasChatPushAll() {
     if (!gasActive() || !online()) return Promise.resolve(0);
     var list = loadChat();
@@ -2585,7 +2621,27 @@
     flushChatOutbox();
   }, 7000);
 
+  var _poemPullTimer = null;
+  _poemPullTimer = setInterval(function () {
+    if (document.hidden) return;
+    if (!gasActive() || !online()) return;
+    silentPoemPull();
+    flushOutbox();
+    // chat juga ikut silent
+    gasChatPull();
+  }, 12000);
+  // pull awal 3 detik setelah load (auto tanpa klik)
+  setTimeout(function () {
+    if (gasActive() && online()) {
+      silentPoemPull();
+      gasChatPull();
+      flushOutbox();
+      flushChatOutbox();
+    }
+  }, 3000);
+
   window.addEventListener('online', function () {
+    flushOutbox().then(function(){ silentPoemPull(); });
     flushChatOutbox().then(function(){ gasChatPull(); });
   });
 

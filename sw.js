@@ -6,7 +6,7 @@
    - Aset (ikon, logo): cache-first
    - Permintaan ke Google Apps Script: TIDAK pernah di-cache
    ============================================================ */
-var CACHE = 'kym-v44';
+var CACHE = 'kym-v45';
 var SHELL = [
   './',
   './index.html',
