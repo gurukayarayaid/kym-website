@@ -152,6 +152,18 @@
   .chat-msg-file-info { flex: 1; min-width: 0; }
   .chat-msg-file-name { font-size: .78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: inherit; }
   .chat-msg-file-size { font-size: .68rem; opacity: .75; }
+  /* Overlay perbesar gambar (lightbox) */
+  .chat-lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(2,6,23,.92); display: none; align-items: center; justify-content: center; flex-direction: column; padding: 16px; animation: lbFade .18s ease; }
+  .chat-lightbox.show { display: flex; }
+  @keyframes lbFade { from { opacity: 0; } to { opacity: 1; } }
+  .chat-lightbox-imgwrap { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; overflow: auto; -webkit-overflow-scrolling: touch; }
+  .chat-lightbox img { max-width: 94vw; max-height: 80vh; border-radius: 10px; box-shadow: 0 8px 40px rgba(0,0,0,.5); object-fit: contain; cursor: zoom-in; transition: transform .18s ease; }
+  .chat-lightbox img.zoom { max-width: none; max-height: none; width: auto; height: auto; cursor: zoom-out; transform: scale(1.6); transform-origin: center center; }
+  .chat-lightbox-cap { color: #e2e8f0; font-size: .82rem; margin-top: 10px; max-width: 94vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-lightbox-hint { color: #94a3b8; font-size: .72rem; margin-top: 2px; }
+  .chat-lightbox-close { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 12px; width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(255,255,255,.14); color: #fff; font-size: 1.2rem; cursor: pointer; }
+  .chat-lightbox-close:hover { background: rgba(255,255,255,.28); }
+  .chat-lightbox-dl { margin-top: 10px; display: inline-block; background: var(--primary); color: #fff; font-weight: 600; font-size: .85rem; padding: 9px 18px; border-radius: 999px; text-decoration: none; }
 
   /* Chat list (admin view) */
   .chat-list-item { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .12s; }
@@ -1051,6 +1063,17 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Overlay perbesar gambar chat -->
+<div class="chat-lightbox" id="chat-lightbox" role="dialog" aria-label="Pratinjau gambar">
+  <button type="button" class="chat-lightbox-close" id="chat-lightbox-close" aria-label="Tutup">✕</button>
+  <div class="chat-lightbox-imgwrap" id="chat-lightbox-wrap">
+    <img id="chat-lightbox-img" alt="Lampiran gambar">
+  </div>
+  <div class="chat-lightbox-cap" id="chat-lightbox-cap"></div>
+  <div class="chat-lightbox-hint">Ketuk gambar untuk zoom • ketuk latar untuk tutup</div>
+  <a class="chat-lightbox-dl" id="chat-lightbox-dl" download>⬇️ Simpan Gambar</a>
+</div>
 
 <script src="app.js"></script>
 </body>

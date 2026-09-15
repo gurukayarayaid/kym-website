@@ -3706,15 +3706,7 @@
             imgEl.alt = m.file.name;
             imgEl.title = m.file.name;
             imgEl.addEventListener('click', function () {
-              var win = window.open('', '_blank');
-              if (!win) return;
-              win.document.title = m.file.name;
-              var big = win.document.createElement('img');
-              big.src = dataUrl;
-              big.style.maxWidth = '100%';
-              big.style.cursor = 'zoom-out';
-              big.onclick = function () { win.close(); };
-              win.document.body.appendChild(big);
+              openChatLightbox(dataUrl, m.file.name);
             });
             slot.replaceWith(imgEl);
           } else {
@@ -3749,6 +3741,30 @@
         if (slot.parentNode) slot.textContent = '⚠️ Gagal memuat lampiran.';
       });
     });
+  }
+
+  /* --- Overlay perbesar gambar (lightbox) --- */
+  function openChatLightbox(dataUrl, name) {
+    var lb = $('chat-lightbox');
+    var img = $('chat-lightbox-img');
+    if (!lb || !img) return;
+    img.classList.remove('zoom');
+    img.src = dataUrl;
+    img.alt = name || 'Lampiran gambar';
+    var cap = $('chat-lightbox-cap');
+    if (cap) cap.textContent = name || '';
+    var dl = $('chat-lightbox-dl');
+    if (dl) { dl.href = dataUrl; dl.setAttribute('download', name || 'gambar.jpg'); }
+    lb.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeChatLightbox() {
+    var lb = $('chat-lightbox');
+    if (!lb || !lb.classList.contains('show')) return;
+    lb.classList.remove('show');
+    document.body.style.overflow = '';
+    var img = $('chat-lightbox-img');
+    if (img) { img.classList.remove('zoom'); img.removeAttribute('src'); }
   }
 
   /* --- Bind edit/hapus buttons --- */
@@ -4179,6 +4195,21 @@
     if (btnClear) {
       btnClear.addEventListener('click', function () { clearChatConversation(); });
     }
+    // Overlay perbesar gambar: tutup, zoom, klik latar
+    var lbClose = $('chat-lightbox-close');
+    if (lbClose) lbClose.addEventListener('click', function () { closeChatLightbox(); });
+    var lbBox = $('chat-lightbox');
+    if (lbBox) lbBox.addEventListener('click', function (e) {
+      if (e.target === lbBox || e.target === $('chat-lightbox-wrap')) closeChatLightbox();
+    });
+    var lbImg = $('chat-lightbox-img');
+    if (lbImg) lbImg.addEventListener('click', function (e) {
+      e.stopPropagation();
+      lbImg.classList.toggle('zoom');
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeChatLightbox();
+    });
     // Paste gambar dari clipboard ke input chat
     if (chatInput) {
       chatInput.addEventListener('paste', function (e) {
