@@ -87,6 +87,11 @@
   .chat-msg.me .chat-sender { color: rgba(255,255,255,.8); }
   .chat-msg .chat-time { font-size: .65rem; opacity: .6; margin-top: 4px; text-align: right; }
   .chat-msg.me .chat-time { color: rgba(255,255,255,.7); }
+  .chat-actions { display: flex; gap: 4px; margin-top: 4px; }
+  .chat-act-btn { background: none; border: none; cursor: pointer; font-size: .85rem; padding: 2px 4px; border-radius: 4px; transition: background .12s; opacity: .6; }
+  .chat-act-btn:hover { opacity: 1; background: rgba(0,0,0,.08); }
+  .chat-msg.me .chat-act-btn:hover { background: rgba(255,255,255,.2); }
+  .chat-text { white-space: pre-wrap; }
   .chat-msg.system { align-self: center; background: transparent; color: var(--muted); font-size: .78rem; font-style: italic; max-width: 90%; text-align: center; padding: 4px 10px; }
   .chat-input-bar { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--card); }
   .chat-input-bar input { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 999px; font: inherit; font-size: .9rem; }

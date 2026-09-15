@@ -15,7 +15,6 @@
   var LS_DEVICE = 'kym_device_id_v1';
   var LS_SESSION = 'kym_user_session_v1';
   var LS_GURU = 'kym_guru_accounts_v1';
-  var LS_CHAT = 'kym_chat_v1';
   var IDB_NAME = 'kym-filedb';
   var IDB_STORE = 'handles';
 
@@ -1840,7 +1839,13 @@
   /* ============================================================
      CHAT MODULE
      ============================================================ */
+  var LS_CHAT = 'kym_chat_v1';
   var chatPollTimer = null;
+
+  function chatUserId(ses) {
+    if (!ses) return '';
+    return ses.nis || ses.nama || 'admin';
+  }
 
   function loadChat() {
     try { return JSON.parse(localStorage.getItem(LS_CHAT)) || []; }
@@ -1849,11 +1854,9 @@
   function saveChat(msgs) {
     try { localStorage.setItem(LS_CHAT, JSON.stringify(msgs)); } catch (e) {}
   }
-
   function chatId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
   }
-
   function chatTime(ts) {
     var d = new Date(ts);
     var now = new Date();
@@ -1861,40 +1864,40 @@
     if (d.toDateString() === now.toDateString()) return pad(d.getHours()) + ':' + pad(d.getMinutes());
     return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
+  function getChatKey(uid1, uid2) {
+    return [uid1, uid2].sort().join('_');
+  }
 
+  /* --- Conversation list --- */
   function getConversations() {
     var ses = getSession();
+    var uid = chatUserId(ses);
     var msgs = loadChat();
     var convos = {};
     msgs.forEach(function (m) {
+      if (m.deleted) return;
       var key = m.chatKey;
       if (!convos[key]) convos[key] = { key: key, users: {}, lastMsg: null, unread: {} };
       convos[key].users[m.senderId] = { id: m.senderId, name: m.senderName, role: m.senderRole };
       if (!convos[key].lastMsg || m.ts > convos[key].lastMsg.ts) convos[key].lastMsg = m;
-      if (ses && m.senderId !== ses.id && !m.read) {
-        convos[key].unread[ses.id] = (convos[key].unread[ses.id] || 0) + 1;
+      if (uid && m.senderId !== uid && !m.read) {
+        convos[key].unread[uid] = (convos[key].unread[uid] || 0) + 1;
       }
     });
     var arr = Object.values(convos);
     arr.sort(function (a, b) { return (b.lastMsg ? b.lastMsg.ts : 0) - (a.lastMsg ? a.lastMsg.ts : 0); });
     return arr;
   }
-
-  function getChatKey(userId1, userId2) {
-    return [userId1, userId2].sort().join('_');
-  }
-
   function getUnreadTotal() {
     var ses = getSession();
     if (!ses) return 0;
+    var uid = chatUserId(ses);
     var total = 0;
-    var convos = getConversations();
-    convos.forEach(function (c) {
-      if (c.unread[ses.id]) total += c.unread[ses.id];
+    getConversations().forEach(function (c) {
+      if (c.unread[uid]) total += c.unread[uid];
     });
     return total;
   }
-
   function updateChatBadge() {
     var badge = $('chat-badge');
     if (!badge) return;
@@ -1903,8 +1906,10 @@
     else { badge.style.display = 'none'; }
   }
 
+  /* --- Render conversation list --- */
   function renderChatList() {
     var ses = getSession();
+    var uid = chatUserId(ses);
     var list = $('chat-list');
     if (!list) return;
     if (!ses) {
@@ -1920,15 +1925,14 @@
     convos.forEach(function (c) {
       var other = null;
       Object.values(c.users).forEach(function (u) {
-        if (u.id !== ses.id) other = u;
+        if (u.id !== uid) other = u;
       });
       if (!other) return;
-      var isMeAdmin = ses.role === 'admin';
       var avatarCls = other.role === 'guru' ? 'guru' : other.role === 'admin' ? 'admin' : 'murid';
       var avatarIcon = other.role === 'guru' ? '👨‍🏫' : other.role === 'admin' ? '🛡️' : '👩‍🎓';
       var preview = c.lastMsg ? (c.lastMsg.text.length > 40 ? c.lastMsg.text.substr(0, 40) + '…' : c.lastMsg.text) : '';
       var time = c.lastMsg ? chatTime(c.lastMsg.ts) : '';
-      var unread = c.unread[ses.id] || 0;
+      var unread = c.unread[uid] || 0;
       html += '<div class="chat-list-item" data-chat="' + c.key + '" data-user="' + other.id + '" data-name="' + esc(other.name) + '" data-role="' + other.role + '">'
         + '<div class="chat-list-avatar ' + avatarCls + '">' + avatarIcon + '</div>'
         + '<div class="chat-list-info">'
@@ -1948,25 +1952,30 @@
     });
   }
 
+  /* --- Open chat room --- */
   function openChatRoom(chatKey, otherId, otherName, otherRole) {
     $('chat-list-view').style.display = 'none';
     $('chat-room-view').style.display = '';
     $('chat-room-name').textContent = otherName;
     var roleLabel = otherRole === 'guru' ? 'Guru/Tendik (GTK)' : otherRole === 'admin' ? 'Admin' : 'Murid';
     $('chat-room-role').textContent = roleLabel;
-    $('chat-messages').setAttribute('data-chat', chatKey);
-    $('chat-messages').setAttribute('data-other', otherId);
+    var container = $('chat-messages');
+    container.setAttribute('data-chat', chatKey);
+    container.setAttribute('data-other', otherId);
     renderChatMessages(chatKey);
+    $('chat-input').focus();
   }
 
+  /* --- Render messages in room --- */
   function renderChatMessages(chatKey) {
     var ses = getSession();
+    var uid = chatUserId(ses);
     var container = $('chat-messages');
     if (!container) return;
-    var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey; });
+    var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
     msgs.sort(function (a, b) { return a.ts - b.ts; });
     if (!msgs.length) {
-      container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Pesan hanya terlihat di perangkat ini.</div>';
+      container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Ketik pesan di bawah.</div>';
       return;
     }
     var html = '';
@@ -1978,26 +1987,75 @@
         html += '<div class="chat-msg system">' + dateStr + '</div>';
         lastDate = dateStr;
       }
-      var isMe = ses && m.senderId === ses.id;
+      var isMe = uid && m.senderId === uid;
       var cls = isMe ? 'me' : 'other';
-      html += '<div class="chat-msg ' + cls + '">'
+      var actions = isMe
+        ? '<div class="chat-actions"><button class="chat-act-btn" data-action="edit" data-id="' + m.id + '" title="Edit">✏️</button><button class="chat-act-btn" data-action="hapus" data-id="' + m.id + '" title="Hapus">🗑️</button></div>'
+        : '';
+      var edited = m.edited ? ' <span style="opacity:.6;font-size:.7rem;">(diedit)</span>' : '';
+      html += '<div class="chat-msg ' + cls + '" data-msgid="' + m.id + '">'
         + (isMe ? '' : '<div class="chat-sender">' + esc(m.senderName) + '</div>')
-        + '<div>' + esc(m.text) + '</div>'
+        + '<div class="chat-text">' + esc(m.text) + edited + '</div>'
+        + actions
         + '<div class="chat-time">' + chatTime(m.ts) + '</div>'
         + '</div>';
     });
     container.innerHTML = html;
     container.scrollTop = container.scrollHeight;
     markChatRead(chatKey);
+    bindChatActions();
   }
 
+  /* --- Bind edit/hapus buttons --- */
+  function bindChatActions() {
+    var container = $('chat-messages');
+    if (!container) return;
+    container.querySelectorAll('.chat-act-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var action = btn.getAttribute('data-action');
+        var msgId = btn.getAttribute('data-id');
+        if (action === 'edit') editChatMessage(msgId);
+        else if (action === 'hapus') deleteChatMessage(msgId);
+      });
+    });
+  }
+
+  /* --- Edit message --- */
+  function editChatMessage(msgId) {
+    var msgs = loadChat();
+    var msg = msgs.find(function (m) { return m.id === msgId; });
+    if (!msg) return;
+    var newText = prompt('Edit pesan:', msg.text);
+    if (newText === null || !newText.trim()) return;
+    msg.text = newText.trim();
+    msg.edited = true;
+    saveChat(msgs);
+    renderChatMessages(msg.chatKey);
+    toast('Pesan diedit.');
+  }
+
+  /* --- Delete message --- */
+  function deleteChatMessage(msgId) {
+    if (!confirm('Hapus pesan ini?')) return;
+    var msgs = loadChat();
+    var msg = msgs.find(function (m) { return m.id === msgId; });
+    if (!msg) return;
+    msg.deleted = true;
+    saveChat(msgs);
+    renderChatMessages(msg.chatKey);
+    toast('Pesan dihapus.');
+  }
+
+  /* --- Mark read --- */
   function markChatRead(chatKey) {
     var ses = getSession();
-    if (!ses) return;
+    var uid = chatUserId(ses);
+    if (!uid) return;
     var msgs = loadChat();
     var changed = false;
     msgs.forEach(function (m) {
-      if (m.chatKey === chatKey && m.senderId !== ses.id && !m.read) {
+      if (m.chatKey === chatKey && m.senderId !== uid && !m.read) {
         m.read = true;
         changed = true;
       }
@@ -2006,37 +2064,39 @@
     updateChatBadge();
   }
 
+  /* --- Send message --- */
   function sendChatMessage(text) {
     var ses = getSession();
-    if (!ses || !text.trim()) return;
+    var uid = chatUserId(ses);
+    if (!uid || !text.trim()) return;
     var container = $('chat-messages');
     var chatKey = container ? container.getAttribute('data-chat') : '';
-    var otherId = container ? container.getAttribute('data-other') : '';
     if (!chatKey) return;
     var msg = {
       id: chatId(),
       chatKey: chatKey,
-      senderId: ses.id,
-      senderName: ses.nama,
-      senderRole: ses.role,
+      senderId: uid,
+      senderName: ses.nama || 'Admin',
+      senderRole: ses.role || 'admin',
       text: text.trim(),
       ts: Date.now(),
-      read: false
+      read: false,
+      edited: false,
+      deleted: false
     };
     var msgs = loadChat();
     msgs.push(msg);
     saveChat(msgs);
     renderChatMessages(chatKey);
     updateChatBadge();
-    if ($('chat-list-view').style.display !== 'none') renderChatList();
   }
 
+  /* --- Init chat page --- */
   function initChat() {
     var ses = getSession();
     var chatView = $('chat-list-view');
     var roomView = $('chat-room-view');
     if (!chatView || !roomView) return;
-
     if (ses) {
       chatView.style.display = '';
       roomView.style.display = 'none';
@@ -2048,29 +2108,26 @@
     updateChatBadge();
   }
 
-  // Auto-create chat room for murid/GTK with admin
+  /* --- Auto-create chat room for murid/GTK with admin --- */
   function ensureAdminChat() {
     var ses = getSession();
     if (!ses || ses.role === 'admin') return;
-    var chatKey = getChatKey(ses.id, 'admin');
+    var uid = chatUserId(ses);
+    var chatKey = getChatKey(uid, 'admin');
     var msgs = loadChat();
     var exists = msgs.some(function (m) { return m.chatKey === chatKey; });
     if (!exists) {
       msgs.push({
-        id: chatId(),
-        chatKey: chatKey,
-        senderId: 'admin',
-        senderName: 'Admin KYM',
-        senderRole: 'admin',
+        id: chatId(), chatKey: chatKey,
+        senderId: 'admin', senderName: 'Admin KYM', senderRole: 'admin',
         text: 'Halo! Ada yang bisa kami bantu? 😊',
-        ts: Date.now(),
-        read: false
+        ts: Date.now(), read: false, edited: false, deleted: false
       });
       saveChat(msgs);
     }
   }
 
-  // Bind chat events
+  /* --- Bind events --- */
   (function () {
     var chatForm = $('chat-form');
     var chatInput = $('chat-input');
@@ -2094,22 +2151,20 @@
     }
   })();
 
-  // Poll for new messages every 5s (same device only, for multi-tab sync)
+  /* --- Poll for new messages (multi-tab) --- */
   chatPollTimer = setInterval(function () {
     if (document.hidden) return;
     var pg = $('page-chat');
     if (pg && pg.classList.contains('active')) {
       var container = $('chat-messages');
-      if (container && container.style.display !== 'none') {
-        var chatKey = container.getAttribute('data-chat');
-        if (chatKey) renderChatMessages(chatKey);
+      if (container && container.getAttribute('data-chat') && $('chat-room-view').style.display !== 'none') {
+        renderChatMessages(container.getAttribute('data-chat'));
       }
-      renderChatList();
+      if ($('chat-list-view').style.display !== 'none') renderChatList();
     }
     updateChatBadge();
   }, 5000);
 
-  // Also update badge on storage events (multi-tab)
   window.addEventListener('storage', function (e) {
     if (e.key === LS_CHAT) { updateChatBadge(); }
   });
