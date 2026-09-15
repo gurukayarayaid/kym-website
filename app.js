@@ -2218,7 +2218,7 @@
     $('chat-input').focus();
   }
 
-  /* --- Render messages in room --- */
+  /* --- Render messages in room (anti kedip) --- */
   function renderChatMessages(chatKey) {
     var ses = chatSession();
     var uid = chatUserId(ses);
@@ -2228,11 +2228,24 @@
     var msgs = allMsgs.filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
     msgs.sort(function (a, b) { return a.ts - b.ts; });
     if (!msgs.length) {
-      container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Ketik pesan di bawah.</div>';
+      // hanya update jika belum ada placeholder
+      if (container.innerHTML.indexOf('Mulai percakapan') === -1) {
+        container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Ketik pesan di bawah.</div>';
+      }
+      return;
+    }
+    // cek apakah scroll sedang di bawah (dekat bottom) sebelum render
+    var wasAtBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 80;
+    var prevSig = container.getAttribute('data-sig') || '';
+    var newSig = msgs.map(function(m){return m.id + (m.edited?'E':'') + (m.deleted?'D':'') + m.text.length;}).join('|');
+    if (prevSig === newSig && container.getAttribute('data-chat') === chatKey) {
+      // tidak ada perubahan visual, jangan re-render agar tidak kedip
+      markChatRead(chatKey);
       return;
     }
     var html = '';
     var lastDate = '';
+    var now = Date.now();
     msgs.forEach(function (m) {
       var d = new Date(m.ts);
       var dateStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -2246,7 +2259,9 @@
         ? '<div class="chat-actions"><button class="chat-act-btn" data-action="edit" data-id="' + m.id + '" title="Edit">✏️</button><button class="chat-act-btn" data-action="hapus" data-id="' + m.id + '" title="Hapus">🗑️</button></div>'
         : '';
       var edited = m.edited ? ' <span style="opacity:.6;font-size:.7rem;">(diedit)</span>' : '';
-      html += '<div class="chat-msg ' + cls + '" data-msgid="' + m.id + '">'
+      // hanya pesan baru (<2.5 detik) dapat animasi 'new' agar tidak kedip massal
+      var isNew = (now - m.ts) < 2500;
+      html += '<div class="chat-msg ' + cls + (isNew ? ' new' : '') + '" data-msgid="' + m.id + '">'
         + (isMe ? '' : '<div class="chat-sender">' + esc(m.senderName) + '</div>')
         + '<div class="chat-text">' + esc(m.text) + edited + '</div>'
         + actions
@@ -2254,7 +2269,12 @@
         + '</div>';
     });
     container.innerHTML = html;
-    container.scrollTop = container.scrollHeight;
+    container.setAttribute('data-sig', newSig);
+    // auto-scroll hanya jika sebelumnya di bawah atau ada pesan baru dari self
+    var lastIsMe = msgs.length && msgs[msgs.length-1].senderId === uid;
+    if (wasAtBottom || lastIsMe) {
+      container.scrollTop = container.scrollHeight;
+    }
     markChatRead(chatKey);
     bindChatActions();
   }
