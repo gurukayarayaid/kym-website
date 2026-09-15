@@ -808,6 +808,23 @@
       return ok;
     }).catch(function () { delete _chatFileDownloading[fileId]; return false; });
   }
+  // Retry unduh dengan status jelas: bedakan server lama / masih dikirim / gagal unduh
+  function retryDownloadChatFile(fileId) {
+    if (!online()) { toast('❌ Tidak ada koneksi internet.'); return; }
+    if (!gasActive()) return;
+    toast('⏳ Mengecek file…');
+    gasApi({ action: 'file_ids' }).then(function (res) {
+      if (!res || !Array.isArray(res.fileIds)) { noteFileServerOutdated(); return; }
+      var f = res.fileIds.filter(function (x) { return x.fileId === fileId; })[0];
+      if (!f) { toast('⏳ File masih dikirim pengirim — tunggu sebentar lalu ketuk lagi.'); return; }
+      if ((f.count || 0) < (f.total || 0)) { toast('⏳ File masih dikirim (' + (f.count || 0) + '/' + (f.total || 0) + ') — tunggu sebentar.'); return; }
+      toast('⏳ Mengunduh file…');
+      downloadChatFile(fileId).then(function (ok) {
+        if (ok) { refreshChatRoomIfOpen(); toast('📎 File diterima.'); }
+        else toast('❌ Gagal mengunduh — ketuk lagi untuk coba.');
+      });
+    }).catch(function () { toast('❌ Koneksi gagal — coba lagi.'); });
+  }
   // Perbaikan 1x per load: pesan ber-file milik sendiri yang memenuhi syarat online
   // tapi tidak ada di server (mis. terkirim saat server lama) → masukkan antrean lagi
   function repairChatFileUploads() {
@@ -3203,11 +3220,7 @@
             noFile.style.cursor = 'pointer';
             noFile.title = 'Ketuk untuk mengunduh file';
             noFile.addEventListener('click', function () {
-              toast('⏳ Mengunduh file…');
-              downloadChatFile(fid).then(function (ok) {
-                if (ok) { refreshChatRoomIfOpen(); toast('📎 File diterima.'); }
-                else toast('⏳ File belum tersedia — coba lagi sebentar.');
-              });
+              retryDownloadChatFile(fid);
             });
           }
           slot.replaceWith(noFile);
@@ -3332,21 +3345,21 @@
     // Sisipkan metadata file jika ada lampiran (gambar / PDF / dokumen)
     if (hasFile) {
       if (_pendingFile.compressing) { toast('⏳ Gambar masih dioptimasi, tunggu sebentar…'); return; }
-      msg.file = {
-        name: _pendingFile.name,
-        type: _pendingFile.type,
-        size: _pendingFile.size,
-        msgId: msg.id
-      };
-      // Simpan data biner ke IndexedDB (async, tidak menunggu)
-      chatFileSave(msg.id, _pendingFile.dataUrl);
-      // File ≤1 MB ikut terkirim online realtime via chunk; selebihnya lokal saja
-      if (_pendingFile.size <= CHAT_FILE_ONLINE_MAX) {
-        enqueueChatFileUpload(msg.id);
-      } else {
-        toast('📎 File >1 MB tersimpan di perangkat ini — teks tetap tersinkron.');
-      }
+      var _pf = { name: _pendingFile.name, type: _pendingFile.type, size: _pendingFile.size, dataUrl: _pendingFile.dataUrl };
+      msg.file = { name: _pf.name, type: _pf.type, size: _pf.size, msgId: msg.id };
       clearPendingFile();
+      // PENTING: tunggu biner tersimpan di IndexedDB dulu, baru antrekan upload.
+      // ( IDB async — baca sebelum tulis commit membuat upload batal permanen. )
+      chatFileSave(msg.id, _pf.dataUrl).then(function () {
+        // File ≤1 MB ikut terkirim online realtime via chunk; selebihnya lokal saja
+        if (_pf.size <= CHAT_FILE_ONLINE_MAX) {
+          enqueueChatFileUpload(msg.id);
+        } else {
+          toast('📎 File >1 MB tersimpan di perangkat ini — teks tetap tersinkron.');
+        }
+      }).catch(function () {
+        toast('❌ Gagal menyimpan file di perangkat.');
+      });
     }
     var msgs = loadChat();
     msgs.push(msg);
