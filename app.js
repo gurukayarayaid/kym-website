@@ -15,6 +15,7 @@
   var LS_DEVICE = 'kym_device_id_v1';
   var LS_SESSION = 'kym_user_session_v1';
   var LS_GURU = 'kym_guru_accounts_v1';
+  var LS_CHAT = 'kym_chat_v1';
   var IDB_NAME = 'kym-filedb';
   var IDB_STORE = 'handles';
 
@@ -561,6 +562,8 @@
     if (name === 'karyaku') renderTokenChip();
     if (name === 'galeri') renderGaleri();
     if (name === 'pasang') renderPasang();
+    if (name === 'chat') { ensureAdminChat(); initChat(); }
+    updateChatBadge();
   }
   document.addEventListener('click', function (e) {
     var a = e.target.closest('[data-nav]');
@@ -677,6 +680,7 @@
 
   function renderLoginUi() {
     renderHeaderSesi();
+    updateChatBadge();
     var ses = getSession();
     var box = $('login-box'), wrap = $('form-kirim-wrap');
     if (ses) {
@@ -1832,4 +1836,284 @@
   // Rute awal dari hash (mendukung shortcut PWA & tautan #kirim / #admin)
   initLoginUi();
   _showPage(pageFromHash());
+
+  /* ============================================================
+     CHAT MODULE
+     ============================================================ */
+  var chatPollTimer = null;
+
+  function loadChat() {
+    try { return JSON.parse(localStorage.getItem(LS_CHAT)) || []; }
+    catch (e) { return []; }
+  }
+  function saveChat(msgs) {
+    try { localStorage.setItem(LS_CHAT, JSON.stringify(msgs)); } catch (e) {}
+  }
+
+  function chatId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+  }
+
+  function chatTime(ts) {
+    var d = new Date(ts);
+    var now = new Date();
+    var pad = function (n) { return n < 10 ? '0' + n : n; };
+    if (d.toDateString() === now.toDateString()) return pad(d.getHours()) + ':' + pad(d.getMinutes());
+    return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function getConversations() {
+    var ses = getSession();
+    var msgs = loadChat();
+    var convos = {};
+    msgs.forEach(function (m) {
+      var key = m.chatKey;
+      if (!convos[key]) convos[key] = { key: key, users: {}, lastMsg: null, unread: {} };
+      convos[key].users[m.senderId] = { id: m.senderId, name: m.senderName, role: m.senderRole };
+      if (!convos[key].lastMsg || m.ts > convos[key].lastMsg.ts) convos[key].lastMsg = m;
+      if (ses && m.senderId !== ses.id && !m.read) {
+        convos[key].unread[ses.id] = (convos[key].unread[ses.id] || 0) + 1;
+      }
+    });
+    var arr = Object.values(convos);
+    arr.sort(function (a, b) { return (b.lastMsg ? b.lastMsg.ts : 0) - (a.lastMsg ? a.lastMsg.ts : 0); });
+    return arr;
+  }
+
+  function getChatKey(userId1, userId2) {
+    return [userId1, userId2].sort().join('_');
+  }
+
+  function getUnreadTotal() {
+    var ses = getSession();
+    if (!ses) return 0;
+    var total = 0;
+    var convos = getConversations();
+    convos.forEach(function (c) {
+      if (c.unread[ses.id]) total += c.unread[ses.id];
+    });
+    return total;
+  }
+
+  function updateChatBadge() {
+    var badge = $('chat-badge');
+    if (!badge) return;
+    var n = getUnreadTotal();
+    if (n > 0) { badge.textContent = n > 99 ? '99+' : n; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+  }
+
+  function renderChatList() {
+    var ses = getSession();
+    var list = $('chat-list');
+    if (!list) return;
+    if (!ses) {
+      list.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><p>Login untuk menggunakan chat.</p></div>';
+      return;
+    }
+    var convos = getConversations();
+    if (!convos.length) {
+      list.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><p>Belum ada percakapan.<br>Mulai chat dengan admin!</p></div>';
+      return;
+    }
+    var html = '';
+    convos.forEach(function (c) {
+      var other = null;
+      Object.values(c.users).forEach(function (u) {
+        if (u.id !== ses.id) other = u;
+      });
+      if (!other) return;
+      var isMeAdmin = ses.role === 'admin';
+      var avatarCls = other.role === 'guru' ? 'guru' : other.role === 'admin' ? 'admin' : 'murid';
+      var avatarIcon = other.role === 'guru' ? '👨‍🏫' : other.role === 'admin' ? '🛡️' : '👩‍🎓';
+      var preview = c.lastMsg ? (c.lastMsg.text.length > 40 ? c.lastMsg.text.substr(0, 40) + '…' : c.lastMsg.text) : '';
+      var time = c.lastMsg ? chatTime(c.lastMsg.ts) : '';
+      var unread = c.unread[ses.id] || 0;
+      html += '<div class="chat-list-item" data-chat="' + c.key + '" data-user="' + other.id + '" data-name="' + esc(other.name) + '" data-role="' + other.role + '">'
+        + '<div class="chat-list-avatar ' + avatarCls + '">' + avatarIcon + '</div>'
+        + '<div class="chat-list-info">'
+        + '<div class="chat-list-name">' + esc(other.name) + '</div>'
+        + '<div class="chat-list-preview">' + esc(preview) + '</div>'
+        + '</div>'
+        + '<div class="chat-list-meta">'
+        + '<div class="chat-list-time">' + time + '</div>'
+        + (unread ? '<div class="chat-list-unread">' + unread + '</div>' : '')
+        + '</div></div>';
+    });
+    list.innerHTML = html;
+    list.querySelectorAll('.chat-list-item').forEach(function (el) {
+      el.addEventListener('click', function () {
+        openChatRoom(el.getAttribute('data-chat'), el.getAttribute('data-user'), el.getAttribute('data-name'), el.getAttribute('data-role'));
+      });
+    });
+  }
+
+  function openChatRoom(chatKey, otherId, otherName, otherRole) {
+    $('chat-list-view').style.display = 'none';
+    $('chat-room-view').style.display = '';
+    $('chat-room-name').textContent = otherName;
+    var roleLabel = otherRole === 'guru' ? 'Guru/Tendik (GTK)' : otherRole === 'admin' ? 'Admin' : 'Murid';
+    $('chat-room-role').textContent = roleLabel;
+    $('chat-messages').setAttribute('data-chat', chatKey);
+    $('chat-messages').setAttribute('data-other', otherId);
+    renderChatMessages(chatKey);
+  }
+
+  function renderChatMessages(chatKey) {
+    var ses = getSession();
+    var container = $('chat-messages');
+    if (!container) return;
+    var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey; });
+    msgs.sort(function (a, b) { return a.ts - b.ts; });
+    if (!msgs.length) {
+      container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Pesan hanya terlihat di perangkat ini.</div>';
+      return;
+    }
+    var html = '';
+    var lastDate = '';
+    msgs.forEach(function (m) {
+      var d = new Date(m.ts);
+      var dateStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      if (dateStr !== lastDate) {
+        html += '<div class="chat-msg system">' + dateStr + '</div>';
+        lastDate = dateStr;
+      }
+      var isMe = ses && m.senderId === ses.id;
+      var cls = isMe ? 'me' : 'other';
+      html += '<div class="chat-msg ' + cls + '">'
+        + (isMe ? '' : '<div class="chat-sender">' + esc(m.senderName) + '</div>')
+        + '<div>' + esc(m.text) + '</div>'
+        + '<div class="chat-time">' + chatTime(m.ts) + '</div>'
+        + '</div>';
+    });
+    container.innerHTML = html;
+    container.scrollTop = container.scrollHeight;
+    markChatRead(chatKey);
+  }
+
+  function markChatRead(chatKey) {
+    var ses = getSession();
+    if (!ses) return;
+    var msgs = loadChat();
+    var changed = false;
+    msgs.forEach(function (m) {
+      if (m.chatKey === chatKey && m.senderId !== ses.id && !m.read) {
+        m.read = true;
+        changed = true;
+      }
+    });
+    if (changed) saveChat(msgs);
+    updateChatBadge();
+  }
+
+  function sendChatMessage(text) {
+    var ses = getSession();
+    if (!ses || !text.trim()) return;
+    var container = $('chat-messages');
+    var chatKey = container ? container.getAttribute('data-chat') : '';
+    var otherId = container ? container.getAttribute('data-other') : '';
+    if (!chatKey) return;
+    var msg = {
+      id: chatId(),
+      chatKey: chatKey,
+      senderId: ses.id,
+      senderName: ses.nama,
+      senderRole: ses.role,
+      text: text.trim(),
+      ts: Date.now(),
+      read: false
+    };
+    var msgs = loadChat();
+    msgs.push(msg);
+    saveChat(msgs);
+    renderChatMessages(chatKey);
+    updateChatBadge();
+    if ($('chat-list-view').style.display !== 'none') renderChatList();
+  }
+
+  function initChat() {
+    var ses = getSession();
+    var chatView = $('chat-list-view');
+    var roomView = $('chat-room-view');
+    if (!chatView || !roomView) return;
+
+    if (ses) {
+      chatView.style.display = '';
+      roomView.style.display = 'none';
+      renderChatList();
+    } else {
+      chatView.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><p>Login untuk menggunakan chat.</p></div>';
+      roomView.style.display = 'none';
+    }
+    updateChatBadge();
+  }
+
+  // Auto-create chat room for murid/GTK with admin
+  function ensureAdminChat() {
+    var ses = getSession();
+    if (!ses || ses.role === 'admin') return;
+    var chatKey = getChatKey(ses.id, 'admin');
+    var msgs = loadChat();
+    var exists = msgs.some(function (m) { return m.chatKey === chatKey; });
+    if (!exists) {
+      msgs.push({
+        id: chatId(),
+        chatKey: chatKey,
+        senderId: 'admin',
+        senderName: 'Admin KYM',
+        senderRole: 'admin',
+        text: 'Halo! Ada yang bisa kami bantu? 😊',
+        ts: Date.now(),
+        read: false
+      });
+      saveChat(msgs);
+    }
+  }
+
+  // Bind chat events
+  (function () {
+    var chatForm = $('chat-form');
+    var chatInput = $('chat-input');
+    var chatBack = $('chat-back');
+    if (chatForm) {
+      chatForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (chatInput.value.trim()) {
+          sendChatMessage(chatInput.value);
+          chatInput.value = '';
+          chatInput.focus();
+        }
+      });
+    }
+    if (chatBack) {
+      chatBack.addEventListener('click', function () {
+        $('chat-list-view').style.display = '';
+        $('chat-room-view').style.display = 'none';
+        renderChatList();
+      });
+    }
+  })();
+
+  // Poll for new messages every 5s (same device only, for multi-tab sync)
+  chatPollTimer = setInterval(function () {
+    if (document.hidden) return;
+    var pg = $('page-chat');
+    if (pg && pg.classList.contains('active')) {
+      var container = $('chat-messages');
+      if (container && container.style.display !== 'none') {
+        var chatKey = container.getAttribute('data-chat');
+        if (chatKey) renderChatMessages(chatKey);
+      }
+      renderChatList();
+    }
+    updateChatBadge();
+  }, 5000);
+
+  // Also update badge on storage events (multi-tab)
+  window.addEventListener('storage', function (e) {
+    if (e.key === LS_CHAT) { updateChatBadge(); }
+  });
+
+  updateChatBadge();
+
 })();
