@@ -1983,6 +1983,7 @@
 
   /* --- Open chat room --- */
   function openChatRoom(chatKey, otherId, otherName, otherRole) {
+    console.log('[CHAT] openRoom: chatKey=', chatKey, 'other=', otherName);
     if (!isAllowedChat(chatKey)) { toast('Chat hanya tersedia dengan admin.'); return; }
     $('chat-list-view').style.display = 'none';
     $('chat-contacts-view').style.display = 'none';
@@ -2002,8 +2003,10 @@
     var ses = chatSession();
     var uid = chatUserId(ses);
     var container = $('chat-messages');
-    if (!container) return;
-    var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
+    if (!container) { console.log('[CHAT] renderMsg: container not found'); return; }
+    var allMsgs = loadChat();
+    var msgs = allMsgs.filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
+    console.log('[CHAT] renderMsg: chatKey=', chatKey, 'total=', allMsgs.length, 'filtered=', msgs.length);
     msgs.sort(function (a, b) { return a.ts - b.ts; });
     if (!msgs.length) {
       container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Ketik pesan di bawah.</div>';
@@ -2099,10 +2102,11 @@
   function sendChatMessage(text) {
     var ses = chatSession();
     var uid = chatUserId(ses);
-    if (!uid || !text.trim()) return;
+    if (!uid || !text.trim()) { console.log('[CHAT] send blocked: uid=', uid, 'text=', text); return; }
     var container = $('chat-messages');
     var chatKey = container ? container.getAttribute('data-chat') : '';
-    if (!chatKey || !isAllowedChat(chatKey)) return;
+    console.log('[CHAT] send: uid=', uid, 'chatKey=', chatKey, 'text=', text);
+    if (!chatKey || !isAllowedChat(chatKey)) { console.log('[CHAT] send blocked: chatKey=', chatKey); return; }
     var msg = {
       id: chatId(),
       chatKey: chatKey,
@@ -2126,6 +2130,7 @@
   /* --- Init chat page --- */
   function initChat() {
     var ses = chatSession();
+    console.log('[CHAT] initChat: ses=', ses);
     var chatView = $('chat-list-view');
     var contactsView = $('chat-contacts-view');
     var roomView = $('chat-room-view');
@@ -2250,14 +2255,18 @@
     var contactSearch = $('chat-contact-search');
 
     if (chatForm) {
+      console.log('[CHAT] form found, binding submit');
       chatForm.addEventListener('submit', function (e) {
         e.preventDefault();
+        console.log('[CHAT] form submitted, value=', chatInput.value);
         if (chatInput.value.trim()) {
           sendChatMessage(chatInput.value);
           chatInput.value = '';
           chatInput.focus();
         }
       });
+    } else {
+      console.log('[CHAT] form NOT found!');
     }
     if (chatBack) {
       chatBack.addEventListener('click', function () {
