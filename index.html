@@ -136,6 +136,32 @@
   .chat-empty { text-align: center; padding: 40px 20px; color: var(--muted); }
   .chat-empty .chat-empty-icon { font-size: 2.5rem; margin-bottom: 8px; }
 
+  /* Chat notification banner & in-app toast */
+  .chat-notif-banner { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: #eff6ff; border-bottom: 1px solid #bfdbfe; transition: all .2s; }
+  .chat-notif-banner.active { background: #f0fdf4; border-bottom-color: #bbf7d0; }
+  .chat-notif-banner.denied { background: #fef2f2; border-bottom-color: #fecaca; }
+  .chat-notif-icon { font-size: 1.35rem; flex-shrink: 0; }
+  .chat-notif-content { flex: 1; min-width: 0; }
+  .chat-notif-title { font-weight: 700; color: var(--ink); font-size: .86rem; }
+  .chat-notif-desc { color: var(--muted); font-size: .76rem; line-height: 1.35; margin-top: 2px; }
+  .chat-notif-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .chat-notif-btn { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: .78rem; font-weight: 700; cursor: pointer; transition: filter .15s; }
+  .chat-notif-btn:hover { filter: brightness(1.1); }
+  .chat-notif-test-btn { background: #fff; border: 1px solid #cbd5e1; color: var(--ink); border-radius: 8px; padding: 6px 10px; font-size: .78rem; font-weight: 600; cursor: pointer; }
+  .chat-notif-test-btn:hover { background: #f8fafc; }
+
+  .chat-inapp-toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-130%); width: 92%; max-width: 440px; background: #ffffff; border-radius: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,.25), 0 8px 10px -6px rgba(0,0,0,.15); border: 1px solid #e2e8f0; padding: 12px 14px; display: flex; align-items: center; gap: 12px; z-index: 99999; transition: transform .3s cubic-bezier(0.16, 1, 0.3, 1), opacity .3s; opacity: 0; pointer-events: none; }
+  .chat-inapp-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+  .chat-inapp-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0; }
+  .chat-inapp-avatar.murid { background: #fef3c7; color: #92400e; }
+  .chat-inapp-avatar.guru { background: #d1fae5; color: #065f46; }
+  .chat-inapp-avatar.admin { background: #dbeafe; color: #1e40af; }
+  .chat-inapp-info { flex: 1; min-width: 0; cursor: pointer; }
+  .chat-inapp-sender { font-weight: 700; font-size: .88rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-inapp-body { font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .chat-inapp-open { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: .78rem; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+  .chat-inapp-close { background: none; border: none; color: var(--muted); font-size: 1.15rem; cursor: pointer; padding: 4px; flex-shrink: 0; }
+
   .card { background: var(--card); border-radius: var(--radius); padding: 22px; box-shadow: 0 1px 4px rgba(15,23,42,.06); margin-top: 22px; border: 1px solid var(--line); }
   .card h2 { color: var(--primary-2); margin-bottom: 12px; font-size: 1.3rem; }
   .card h3 { color: var(--primary-2); margin: 16px 0 8px; font-size: 1.05rem; }
@@ -614,6 +640,18 @@
         <button type="button" class="chat-tab active" id="chat-tab-conv">💬 Percakapan</button>
         <button type="button" class="chat-tab" id="chat-tab-contacts">👤 Kontak</button>
       </div>
+      <!-- Banner Notifikasi Chat (Murid / GTK / Admin) -->
+      <div id="chat-notif-banner" class="chat-notif-banner" style="display:none;">
+        <div class="chat-notif-icon" id="chat-notif-icon">🔔</div>
+        <div class="chat-notif-content">
+          <div class="chat-notif-title" id="chat-notif-title">Aktifkan Notifikasi Pesan</div>
+          <div class="chat-notif-desc" id="chat-notif-desc">Dapatkan pemberitahuan di HP/perangkat saat ada balasan atau pesan baru.</div>
+        </div>
+        <div class="chat-notif-actions">
+          <button type="button" class="chat-notif-btn" id="btn-chat-notif-action">Aktifkan</button>
+          <button type="button" class="chat-notif-test-btn" id="btn-chat-notif-test" title="Uji Coba Notifikasi" style="display:none;">🔔 Tes</button>
+        </div>
+      </div>
       <!-- Daftar percakapan -->
       <div id="chat-list-view">
         <div id="chat-list" style="max-height:60vh; overflow-y:auto;"></div>
@@ -632,6 +670,9 @@
           <div class="chat-header-info">
             <div class="chat-header-name" id="chat-room-name"></div>
             <div class="chat-header-role" id="chat-room-role"></div>
+          </div>
+          <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+            <button type="button" class="chat-act-btn" id="btn-room-notif-status" title="Notifikasi Pesan" style="font-size:1.05rem;">🔔</button>
           </div>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
@@ -678,6 +719,7 @@
           <button class="btn secondary" id="btn-csv">⬇️ Unduh CSV</button>
           <button class="btn secondary" id="btn-print">🖨️ Cetak Rekap</button>
           <button class="btn secondary" id="btn-buka-galeri" data-nav="galeri" title="Buka halaman Galeri Puisi">🖼️ Buka Galeri</button>
+          <button class="btn secondary" id="btn-admin-notif-test" title="Uji coba notifikasi pesan baru pada perangkat admin ini">🔔 Uji Notif Chat</button>
           <button class="btn secondary" id="btn-link-pasang" title="Salin link pemasangan aplikasi untuk dikirim ke murid">🔗 Link Pasang</button>
           <button class="btn secondary" id="btn-export">💾 Backup JSON</button>
           <button class="btn secondary" id="btn-import">📂 Impor JSON</button>
@@ -884,6 +926,17 @@
   <span>📲 Pasang aplikasi KYM di HP Anda</span>
   <button class="btn" id="btn-install">Pasang</button>
   <button class="btn ghost" id="btn-install-dismiss" title="Tutup">✕</button>
+</div>
+
+<!-- ================= FLOATING CHAT TOAST NOTIFICATION ================= -->
+<div id="chat-inapp-toast" class="chat-inapp-toast" role="alert">
+  <div class="chat-inapp-avatar" id="chat-inapp-avatar">💬</div>
+  <div class="chat-inapp-info" id="chat-inapp-click">
+    <div class="chat-inapp-sender" id="chat-inapp-sender">Nama Pengirim</div>
+    <div class="chat-inapp-body" id="chat-inapp-body">Isi pesan baru...</div>
+  </div>
+  <button type="button" class="chat-inapp-open" id="chat-inapp-open">Buka</button>
+  <button type="button" class="chat-inapp-close" id="chat-inapp-close" aria-label="Tutup">✕</button>
 </div>
 
 <div class="toast" id="toast"></div>

@@ -6,7 +6,7 @@
    - Aset (ikon, logo): cache-first
    - Permintaan ke Google Apps Script: TIDAK pernah di-cache
    ============================================================ */
-var CACHE = 'kym-v46';
+var CACHE = 'kym-v47';
 var SHELL = [
   './',
   './index.html',
@@ -77,4 +77,57 @@ self.addEventListener('fetch', function (e) {
       return caches.match(e.request);
     })
   );
+});
+
+/* ============================================================
+   KYM PWA — Push & Notification Event Handlers
+   ============================================================ */
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  var data = event.notification.data || {};
+  var chatKey = data.chatKey || '';
+  var targetHash = '#chat' + (chatKey ? '?k=' + encodeURIComponent(chatKey) : '');
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      // Jika ada window/tab KYM yang sudah terbuka, fokuskan dan arahkan ke chat
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if ('focus' in client) {
+          client.postMessage({
+            type: 'KYM_NOTIFICATION_CLICK',
+            chatKey: chatKey,
+            data: data
+          });
+          return client.focus();
+        }
+      }
+      // Jika belum ada window terbuka, buka window baru
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('./' + targetHash);
+      }
+    })
+  );
+});
+
+self.addEventListener('push', function (event) {
+  var data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (err) {
+      data = { text: event.data.text() };
+    }
+  }
+  var title = data.title || 'Pesan Baru — KYM';
+  var options = {
+    body: data.body || data.text || 'Ada pesan baru untuk Anda.',
+    icon: data.icon || './icons/icon-192.png',
+    badge: data.badge || './icons/icon-192.png',
+    tag: data.tag || ('kym-chat-' + (data.chatKey || Date.now())),
+    renotify: true,
+    vibrate: [150, 80, 150],
+    data: data
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
 });

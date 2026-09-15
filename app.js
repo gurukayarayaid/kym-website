@@ -17,6 +17,7 @@
   var LS_GURU = 'kym_guru_accounts_v1';
   var LS_CHAT = 'kym_chat_v1';
   var LS_CHAT_OUTBOX = 'kym_chat_outbox_v1';
+  var LS_CHAT_NOTIFIED = 'kym_chat_notified_v1';
   var IDB_NAME = 'kym-filedb';
   var IDB_STORE = 'handles';
 
@@ -203,16 +204,32 @@
 
   /* ---------- Navigasi via hash (untuk shortcut PWA & deep-link) ---------- */
   function pageFromHash() {
-    var h = (location.hash || '').replace('#', '');
+    var raw = (location.hash || '').replace('#', '');
+    var h = raw.split('?')[0];
     return ['materi', 'kirim', 'galeri', 'karyaku', 'admin', 'pasang', 'chat'].indexOf(h) !== -1 ? h : 'kirim';
   }
   var _showPage = showPage;
   showPage = function (name) {
-    if (location.hash !== '#' + name) { location.hash = name; return; }
-    _showPage(name);
+    var cleanName = name.split('?')[0];
+    var currentBase = (location.hash || '').replace('#', '').split('?')[0];
+    if (currentBase !== cleanName) { location.hash = name; return; }
+    _showPage(cleanName);
   };
+  function checkChatDeepLink() {
+    var raw = (location.hash || '').replace('#', '');
+    if (raw.indexOf('chat?k=') !== -1) {
+      var match = raw.match(/k=([^&]+)/);
+      if (match && match[1]) {
+        var key = decodeURIComponent(match[1]);
+        setTimeout(function () {
+          if (typeof openChatByKey === 'function') openChatByKey(key);
+        }, 120);
+      }
+    }
+  }
   window.addEventListener('hashchange', function () {
     _showPage(pageFromHash());
+    checkChatDeepLink();
   });
 
   function $(id) { return document.getElementById(id); }
@@ -484,9 +501,14 @@
     var map = {};
     local.forEach(function (m) { map[m.id] = m; });
     var added = 0, updated = 0;
+    var newIncoming = [];
     remoteChats.forEach(function (rm) {
       var lm = map[rm.id];
-      if (!lm) { local.push(rm); added++; }
+      if (!lm) {
+        local.push(rm);
+        added++;
+        newIncoming.push(rm);
+      }
       else {
         // remote wins if has newer edit/read/deleted state
         var need = false;
@@ -503,6 +525,10 @@
     remoteChats.forEach(function (c) { remoteIds[c.id] = 1; });
     var out = loadChatOutbox().filter(function (o) { return !remoteIds[o.chat.id]; });
     if (out.length !== loadChatOutbox().length) saveChatOutbox(out);
+
+    if (newIncoming.length && typeof handleIncomingChatNotifications === 'function') {
+      handleIncomingChatNotifications(newIncoming);
+    }
     return added + updated;
   }
   function gasChatPull() {
@@ -865,6 +891,7 @@
   function renderLoginUi() {
     renderHeaderSesi();
     updateChatBadge();
+    if (typeof updateNotificationBannerUi === 'function') updateNotificationBannerUi();
     var ses = getSession();
     var box = $('login-box'), wrap = $('form-kirim-wrap');
     if (ses) {
@@ -2093,6 +2120,435 @@
     return 'murid';
   }
 
+  /* ============================================================
+     AUDIO & HAPTIC NOTIFICATION ENGINE
+     Notifikasi perangkat untuk Murid, GTK, dan Admin
+     ============================================================ */
+  var _audioCtx = null;
+  function getAudioContext() {
+    try {
+      if (!_audioCtx) {
+        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) _audioCtx = new AudioCtx();
+      }
+      if (_audioCtx && _audioCtx.state === 'suspended') {
+        _audioCtx.resume().catch(function () {});
+      }
+      return _audioCtx;
+    } catch (e) { return null; }
+  }
+
+  ['click', 'touchstart', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, function () {
+      if (_audioCtx && _audioCtx.state === 'suspended') {
+        _audioCtx.resume().catch(function () {});
+      }
+    }, { once: true, passive: true });
+  });
+
+  function playChatSound(isIncoming) {
+    try {
+      var ctx = getAudioContext();
+      if (!ctx) return;
+      var now = ctx.currentTime;
+      if (isIncoming) {
+        // Melodi notifikasi lembut 2 nada (A5 880Hz -> E6 1318.5Hz)
+        var osc1 = ctx.createOscillator();
+        var gain1 = ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(880, now);
+        gain1.gain.setValueAtTime(0.22, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.3);
+
+        var osc2 = ctx.createOscillator();
+        var gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1318.5, now + 0.09);
+        gain2.gain.setValueAtTime(0, now);
+        gain2.gain.setValueAtTime(0.28, now + 0.09);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now + 0.09);
+        osc2.stop(now + 0.5);
+      } else {
+        // Suara kirim pesan (pop halus 520Hz)
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(740, now + 0.08);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      }
+    } catch (e) {}
+  }
+
+  function vibrateDevice(pattern) {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(pattern || [150, 80, 150]);
+      }
+    } catch (e) {}
+  }
+
+  function updateAppBadge(count) {
+    try {
+      if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+        if (count > 0) navigator.setAppBadge(count).catch(function () {});
+        else navigator.clearAppBadge().catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  var _origDocTitle = document.title || 'KYM — Kumpulan Karya Murid';
+  var _docTitleFlashTimer = null;
+  function flashDocumentTitle(snippet) {
+    if (!document.hidden) return;
+    clearInterval(_docTitleFlashTimer);
+    var flip = false;
+    _docTitleFlashTimer = setInterval(function () {
+      if (!document.hidden) {
+        resetDocumentTitle();
+        return;
+      }
+      var unread = getUnreadTotal();
+      var countStr = unread > 0 ? '(' + unread + ') ' : '';
+      document.title = (flip ? '💬 ' + countStr + 'Pesan Baru!' : '🔔 ' + countStr + 'KYM Chat') + (snippet ? ' — ' + snippet : '');
+      flip = !flip;
+    }, 1400);
+  }
+  function resetDocumentTitle() {
+    if (_docTitleFlashTimer) {
+      clearInterval(_docTitleFlashTimer);
+      _docTitleFlashTimer = null;
+    }
+    document.title = _origDocTitle;
+  }
+
+  /* --- Notified messages tracker (mencegah duplikasi notifikasi) --- */
+  function loadNotifiedMsgIds() {
+    try { return JSON.parse(localStorage.getItem(LS_CHAT_NOTIFIED)) || {}; }
+    catch (e) { return {}; }
+  }
+  function markMsgNotified(id) {
+    if (!id) return;
+    try {
+      var map = loadNotifiedMsgIds();
+      map[id] = Date.now();
+      var keys = Object.keys(map);
+      if (keys.length > 350) {
+        var keep = {};
+        keys.slice(keys.length - 250).forEach(function (k) { keep[k] = map[k]; });
+        map = keep;
+      }
+      localStorage.setItem(LS_CHAT_NOTIFIED, JSON.stringify(map));
+    } catch (e) {}
+  }
+
+  var _initialMsgsSeeded = false;
+  function seedInitialNotifiedMsgs() {
+    if (_initialMsgsSeeded) return;
+    _initialMsgsSeeded = true;
+    var existing = loadChat();
+    if (!existing.length) return;
+    var map = loadNotifiedMsgIds();
+    var changed = false;
+    existing.forEach(function (m) {
+      if (!map[m.id]) { map[m.id] = m.ts || Date.now(); changed = true; }
+    });
+    if (changed) {
+      try { localStorage.setItem(LS_CHAT_NOTIFIED, JSON.stringify(map)); } catch (e) {}
+    }
+  }
+
+  /* --- Cek apakah pesan ditujukan untuk sesi yang aktif di perangkat ini --- */
+  function isMessageForCurrentSession(msg) {
+    if (!msg || msg.deleted || msg.read) return false;
+    var ses = chatSession();
+    if (!ses) return false;
+    var uid = chatUserId(ses);
+    if (!uid || msg.senderId === uid) return false;
+
+    if (isAdmin(ses)) {
+      // Perangkat Admin: menerima pesan dari siapa pun (murid atau GTK)
+      return msg.chatKey && msg.chatKey.indexOf('admin') !== -1;
+    } else {
+      // Perangkat Murid atau GTK: menerima pesan dari admin yang ditujukan ke murid/guru ini
+      var parts = (msg.chatKey || '').split('_');
+      return parts.indexOf(uid) !== -1;
+    }
+  }
+
+  /* --- Buka room chat berdasarkan chatKey (untuk klik notifikasi & deep link) --- */
+  function openChatByKey(chatKey) {
+    if (!chatKey || !isAllowedChat(chatKey)) return;
+    var ses = chatSession();
+    if (!ses) {
+      showPage('kirim');
+      toast('Silakan login terlebih dahulu untuk membuka pesan chat.');
+      return;
+    }
+    var uid = chatUserId(ses);
+    var parts = chatKey.split('_');
+    var otherId = (parts[0] === uid) ? parts[1] : parts[0];
+    var otherName = lookupNameById(otherId);
+    var otherRole = lookupRoleById(otherId);
+    showPage('chat');
+    openChatRoom(chatKey, otherId, otherName, otherRole);
+  }
+
+  /* --- In-App Floating Toast Notification --- */
+  var _inAppToastTimer = null;
+  function showInAppToast(msg) {
+    var toastEl = $('chat-inapp-toast');
+    if (!toastEl) return;
+    var avatarEl = $('chat-inapp-avatar');
+    var senderEl = $('chat-inapp-sender');
+    var bodyEl = $('chat-inapp-body');
+    var roleCls = msg.senderRole === 'guru' ? 'guru' : msg.senderRole === 'admin' ? 'admin' : 'murid';
+    var roleIco = msg.senderRole === 'guru' ? '👨‍🏫' : msg.senderRole === 'admin' ? '🛡️' : '👩‍🎓';
+
+    if (avatarEl) {
+      avatarEl.className = 'chat-inapp-avatar ' + roleCls;
+      avatarEl.textContent = roleIco;
+    }
+    if (senderEl) {
+      var roleName = msg.senderRole === 'guru' ? 'Guru/Tendik' : msg.senderRole === 'admin' ? 'Admin KYM' : 'Murid';
+      senderEl.textContent = msg.senderName + ' (' + roleName + ')';
+    }
+    if (bodyEl) {
+      bodyEl.textContent = msg.text || '';
+    }
+
+    toastEl.setAttribute('data-chat', msg.chatKey);
+    toastEl.classList.add('show');
+    clearTimeout(_inAppToastTimer);
+    _inAppToastTimer = setTimeout(function () {
+      hideInAppToast();
+    }, 6500);
+  }
+  function hideInAppToast() {
+    var toastEl = $('chat-inapp-toast');
+    if (toastEl) toastEl.classList.remove('show');
+    clearTimeout(_inAppToastTimer);
+  }
+
+  /* --- Eksekusi Tampilkan Notifikasi Sistem / PWA --- */
+  function showChatNotification(msg) {
+    if (!msg || !msg.id) return;
+    var isLookingAtCurrentRoom = (!document.hidden &&
+      $('page-chat') && $('page-chat').classList.contains('active') &&
+      $('chat-room-view') && $('chat-room-view').style.display !== 'none' &&
+      $('chat-messages') && $('chat-messages').getAttribute('data-chat') === msg.chatKey);
+
+    if (isLookingAtCurrentRoom) {
+      playChatSound(false);
+      return;
+    }
+
+    playChatSound(true);
+    vibrateDevice([150, 80, 150]);
+    updateAppBadge(getUnreadTotal());
+
+    var preview = msg.text.length > 90 ? msg.text.substr(0, 90) + '…' : msg.text;
+    flashDocumentTitle((msg.senderName || 'Pesan') + ': ' + preview);
+    showInAppToast(msg);
+
+    var roleLabel = msg.senderRole === 'guru' ? ' (Guru/GTK)' : msg.senderRole === 'admin' ? '' : ' (Murid)';
+    var title = '💬 Pesan Baru: ' + (msg.senderName || 'KYM') + roleLabel;
+    var notifOptions = {
+      body: preview,
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: 'kym-chat-' + msg.chatKey,
+      renotify: true,
+      vibrate: [150, 80, 150],
+      data: {
+        chatKey: msg.chatKey,
+        msgId: msg.id,
+        senderId: msg.senderId
+      }
+    };
+
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then(function (reg) {
+        return reg.showNotification(title, notifOptions);
+      }).catch(function () {
+        fallbackDesktopNotification(title, notifOptions, msg.chatKey);
+      });
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      fallbackDesktopNotification(title, notifOptions, msg.chatKey);
+    }
+  }
+
+  function fallbackDesktopNotification(title, options, chatKey) {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      var n = new Notification(title, {
+        body: options.body,
+        icon: options.icon,
+        badge: options.badge,
+        tag: options.tag
+      });
+      n.onclick = function () {
+        window.focus();
+        openChatByKey(chatKey);
+        n.close();
+      };
+    } catch (e) {}
+  }
+
+  /* --- Handler saat ada pesan baru dari remote GAS atau storage --- */
+  function handleIncomingChatNotifications(newMsgs) {
+    if (!Array.isArray(newMsgs) || !newMsgs.length) return;
+    var notifiedMap = loadNotifiedMsgIds();
+    var ses = chatSession();
+    if (!ses) return;
+
+    newMsgs.forEach(function (m) {
+      if (notifiedMap[m.id]) return;
+      if (!isMessageForCurrentSession(m)) return;
+      if (m.ts && (Date.now() - m.ts) > 12 * 3600 * 1000) {
+        markMsgNotified(m.id);
+        return;
+      }
+      markMsgNotified(m.id);
+      showChatNotification(m);
+    });
+  }
+
+  /* --- Izin & UI Notifikasi --- */
+  function getNotificationPermission() {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+    return Notification.permission;
+  }
+
+  function requestChatNotificationPermission() {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      toast('Perangkat/browser ini tidak mendukung Web Notification API.');
+      return Promise.resolve('unsupported');
+    }
+    getAudioContext();
+    return Notification.requestPermission().then(function (perm) {
+      updateNotificationBannerUi();
+      if (perm === 'granted') {
+        toast('🔔 Izin notifikasi aktif! Mengirim notifikasi tes…');
+        testChatNotification();
+      } else if (perm === 'denied') {
+        toast('⚠️ Notifikasi diblokir di browser. Izinkan via setelan situs browser Anda.');
+      }
+      return perm;
+    });
+  }
+
+  function updateNotificationBannerUi() {
+    var banner = $('chat-notif-banner');
+    var titleEl = $('chat-notif-title');
+    var descEl = $('chat-notif-desc');
+    var btnAction = $('btn-chat-notif-action');
+    var btnTest = $('btn-chat-notif-test');
+    var roomBtn = $('btn-room-notif-status');
+    var ses = chatSession();
+
+    if (!banner) return;
+    var perm = getNotificationPermission();
+
+    if (perm === 'unsupported' || !ses) {
+      banner.style.display = 'none';
+      if (roomBtn) roomBtn.style.display = 'none';
+      return;
+    }
+
+    banner.style.display = 'flex';
+    banner.classList.remove('active', 'denied');
+
+    var targetHint = isAdmin(ses) ? 'murid atau guru' : 'Admin';
+
+    if (perm === 'granted') {
+      banner.classList.add('active');
+      if (titleEl) titleEl.textContent = '🔔 Notifikasi Chat Aktif';
+      if (descEl) descEl.textContent = 'Perangkat Anda siap menerima pemberitahuan pesan baru dari ' + targetHint + '.';
+      if (btnAction) { btnAction.style.display = 'none'; }
+      if (btnTest) { btnTest.style.display = ''; }
+      if (roomBtn) { roomBtn.textContent = '🔔'; roomBtn.title = 'Notifikasi Aktif (Klik untuk uji coba)'; }
+    } else if (perm === 'denied') {
+      banner.classList.add('denied');
+      if (titleEl) titleEl.textContent = '⚠️ Izin Notifikasi Diblokir';
+      if (descEl) descEl.textContent = 'Browser memblokir notifikasi. Ketuk setelan situs di browser untuk mengizinkan.';
+      if (btnAction) { btnAction.style.display = 'none'; }
+      if (btnTest) { btnTest.style.display = 'none'; }
+      if (roomBtn) { roomBtn.textContent = '🔕'; roomBtn.title = 'Notifikasi Diblokir di Browser'; }
+    } else {
+      if (titleEl) titleEl.textContent = '🔔 Aktifkan Notifikasi Pesan di Perangkat Ini';
+      if (descEl) descEl.textContent = 'Dapatkan pemberitahuan di HP / Komputer Anda saat ada balasan atau pesan baru dari ' + targetHint + '.';
+      if (btnAction) { btnAction.style.display = ''; btnAction.textContent = 'Aktifkan'; }
+      if (btnTest) { btnTest.style.display = 'none'; }
+      if (roomBtn) { roomBtn.textContent = '🔔'; roomBtn.title = 'Klik untuk mengaktifkan notifikasi'; }
+    }
+  }
+
+  function testChatNotification() {
+    var ses = chatSession();
+    var perm = getNotificationPermission();
+    if (perm !== 'granted') {
+      requestChatNotificationPermission();
+      return;
+    }
+    var fakeMsg = null;
+    var now = Date.now();
+    if (!ses || isAdmin(ses)) {
+      fakeMsg = {
+        id: 'test_' + now,
+        chatKey: '1001_admin',
+        senderId: '1001',
+        senderName: 'Ahmad Dahlan',
+        senderRole: 'murid',
+        text: 'Halo Admin KYM! Ini pesan uji coba notifikasi dari murid. 🌟',
+        ts: now,
+        read: false,
+        edited: false,
+        deleted: false
+      };
+    } else if (ses.role === 'guru') {
+      fakeMsg = {
+        id: 'test_' + now,
+        chatKey: getChatKey(chatUserId(ses), 'admin'),
+        senderId: 'admin',
+        senderName: 'Admin KYM',
+        senderRole: 'admin',
+        text: 'Halo ' + (ses.nama || 'Bapak/Ibu Guru') + '! Ini adalah pesan uji coba notifikasi chat GTK. 😊',
+        ts: now,
+        read: false,
+        edited: false,
+        deleted: false
+      };
+    } else {
+      fakeMsg = {
+        id: 'test_' + now,
+        chatKey: getChatKey(chatUserId(ses), 'admin'),
+        senderId: 'admin',
+        senderName: 'Admin KYM',
+        senderRole: 'admin',
+        text: 'Halo ' + (ses.nama || 'Murid') + '! Puisi karyamu sudah kami terima. Semangat terus berkarya! 👏',
+        ts: now,
+        read: false,
+        edited: false,
+        deleted: false
+      };
+    }
+    showChatNotification(fakeMsg);
+    toast('🔔 Notifikasi uji coba telah dikirim ke perangkat Anda.');
+  }
+
   /* --- Conversation list --- */
   function getConversations() {
     var ses = chatSession();
@@ -2149,10 +2605,12 @@
   }
   function updateChatBadge() {
     var badge = $('chat-badge');
-    if (!badge) return;
     var n = getUnreadTotal();
-    if (n > 0) { badge.textContent = n > 99 ? '99+' : n; badge.style.display = ''; }
-    else { badge.style.display = 'none'; }
+    if (badge) {
+      if (n > 0) { badge.textContent = n > 99 ? '99+' : n; badge.style.display = ''; }
+      else { badge.style.display = 'none'; }
+    }
+    updateAppBadge(n);
   }
 
   /* --- Render conversation list --- */
@@ -2383,8 +2841,10 @@
     var msgs = loadChat();
     msgs.push(msg);
     saveChat(msgs);
+    markMsgNotified(msg.id);
     syncChatMessage('create', msg);
     _chatLastCount = msgs.length;
+    playChatSound(false);
     renderChatMessages(chatKey);
     renderChatListIfVisible();
     updateChatBadge();
@@ -2410,6 +2870,8 @@
     var contactsView = $('chat-contacts-view');
     var roomView = $('chat-room-view');
     if (!chatView || !roomView) return;
+    seedInitialNotifiedMsgs();
+    updateNotificationBannerUi();
     if (ses) {
       chatView.style.display = '';
       if (contactsView) contactsView.style.display = 'none';
@@ -2601,9 +3063,74 @@
         renderChatContacts(contactSearch.value);
       });
     }
+
+    /* Tombol izin notifikasi & tes notifikasi di halaman Chat */
+    var btnNotifAct = $('btn-chat-notif-action');
+    if (btnNotifAct) {
+      btnNotifAct.addEventListener('click', function () {
+        requestChatNotificationPermission();
+      });
+    }
+    var btnNotifTest = $('btn-chat-notif-test');
+    if (btnNotifTest) {
+      btnNotifTest.addEventListener('click', function () {
+        testChatNotification();
+      });
+    }
+    var btnRoomNotif = $('btn-room-notif-status');
+    if (btnRoomNotif) {
+      btnRoomNotif.addEventListener('click', function () {
+        if (getNotificationPermission() === 'granted') testChatNotification();
+        else requestChatNotificationPermission();
+      });
+    }
+
+    /* Tombol tes notifikasi di panel Admin */
+    var btnAdminNotifTest = $('btn-admin-notif-test');
+    if (btnAdminNotifTest) {
+      btnAdminNotifTest.addEventListener('click', function () {
+        testChatNotification();
+      });
+    }
+
+    /* Floating In-App Toast klik handler */
+    var inAppToastEl = $('chat-inapp-toast');
+    var inAppToastOpen = $('chat-inapp-open');
+    var inAppToastClick = $('chat-inapp-click');
+    var inAppToastClose = $('chat-inapp-close');
+    if (inAppToastOpen) {
+      inAppToastOpen.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var k = inAppToastEl ? inAppToastEl.getAttribute('data-chat') : '';
+        hideInAppToast();
+        if (k) openChatByKey(k);
+      });
+    }
+    if (inAppToastClick) {
+      inAppToastClick.addEventListener('click', function () {
+        var k = inAppToastEl ? inAppToastEl.getAttribute('data-chat') : '';
+        hideInAppToast();
+        if (k) openChatByKey(k);
+      });
+    }
+    if (inAppToastClose) {
+      inAppToastClose.addEventListener('click', function (e) {
+        e.stopPropagation();
+        hideInAppToast();
+      });
+    }
+
+    /* Listener Service Worker message (saat notifikasi sistem diklik) */
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', function (e) {
+        if (e.data && e.data.type === 'KYM_NOTIFICATION_CLICK' && e.data.chatKey) {
+          openChatByKey(e.data.chatKey);
+        }
+      });
+    }
   })();
 
-  /* --- Real-time polling (local 2s) + GAS pull (7s) --- */
+  /* --- Real-time polling (local 2s) + GAS pull adaptif (6s active / 10s background) --- */
   chatPollTimer = setInterval(function () {
     if (document.hidden) return;
     var pg = $('page-chat');
@@ -2632,14 +3159,29 @@
     _chatLastCount = newCount;
   }, 2000);
 
-  _chatGasPullTimer = setInterval(function () {
-    if (document.hidden) return;
+  var _lastChatGasPull = 0;
+  function doAdaptiveChatGasPull() {
     if (!gasActive() || !online()) return;
+    var now = Date.now();
+    // 6 detik saat aktif, 10 detik saat tab di background/layar diminimalkan
+    var interval = document.hidden ? 10000 : 6000;
+    if (now - _lastChatGasPull < interval) return;
+    _lastChatGasPull = now;
     gasChatPull().then(function (n) {
       if (n) { flushChatOutbox(); }
     });
     flushChatOutbox();
-  }, 7000);
+  }
+
+  _chatGasPullTimer = setInterval(doAdaptiveChatGasPull, 3000);
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) {
+      resetDocumentTitle();
+      updateChatBadge();
+      doAdaptiveChatGasPull();
+    }
+  });
 
   var _poemPullTimer = null;
   _poemPullTimer = setInterval(function () {
@@ -2647,8 +3189,7 @@
     if (!gasActive() || !online()) return;
     silentPoemPull();
     flushOutbox();
-    // chat juga ikut silent
-    gasChatPull();
+    doAdaptiveChatGasPull();
   }, 12000);
   // pull awal 3 detik setelah load (auto tanpa klik)
   setTimeout(function () {
@@ -2669,6 +3210,10 @@
   window.addEventListener('storage', function (e) {
     if (e.key !== LS_CHAT && e.key !== LS_CHAT_OUTBOX) return;
     updateChatBadge();
+    var all = loadChat();
+    if (typeof handleIncomingChatNotifications === 'function') {
+      handleIncomingChatNotifications(all);
+    }
     var pg = $('page-chat');
     if (!pg || !pg.classList.contains('active')) return;
     var roomOpen = $('chat-room-view') && $('chat-room-view').style.display !== 'none';
@@ -2682,6 +3227,9 @@
     if (cv && cv.style.display !== 'none') renderChatContacts($('chat-contact-search') ? $('chat-contact-search').value : '');
   });
 
+  seedInitialNotifiedMsgs();
+  updateNotificationBannerUi();
   updateChatBadge();
+  checkChatDeepLink();
 
 })();
