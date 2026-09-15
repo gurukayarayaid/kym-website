@@ -735,7 +735,9 @@
       var s = SISWA.filter(function (x) { return x[0] === nis; })[0];
       if (!s) { toast('Data murid tidak ditemukan.'); return; }
       if ($('l-pass').value.trim() !== s[0]) { toast('Kata sandi salah. Kata sandi murid = NIS.'); return; }
+      console.log('[CHAT] LOGIN murid: setting session nis=' + s[0] + ' nama=' + s[1] + ' kelas=' + s[2]);
       setSession({ role: 'murid', nis: s[0], nama: s[1], kelasDigit: s[2] });
+      console.log('[CHAT] LOGIN murid: session after set =', JSON.stringify(getSession()));
       renderLoginUi(); fCounter();
     });
     $('form-login-guru').addEventListener('submit', function (e) {
@@ -1857,14 +1859,18 @@
   /* --- Session helpers --- */
   function chatSession() {
     var ses = getSession();
-    if (ses) return ses;
-    if (adminUnlocked()) return { role: 'admin', nama: 'Admin', id: 'admin' };
+    console.log('[CHAT] chatSession: raw session =', JSON.stringify(ses));
+    if (ses) { console.log('[CHAT] chatSession: using session, nama=', ses.nama, 'nis=', ses.nis, 'role=', ses.role); return ses; }
+    if (adminUnlocked()) { console.log('[CHAT] chatSession: using admin fallback'); return { role: 'admin', nama: 'Admin', id: 'admin' }; }
+    console.log('[CHAT] chatSession: no session');
     return null;
   }
   function chatUserId(ses) {
     if (!ses) return '';
     if (ses.id) return ses.id;
-    return ses.nis || ses.nama || 'admin';
+    var uid = ses.nis || ses.nama || 'admin';
+    console.log('[CHAT] chatUserId: ses.id=', ses.id, 'ses.nis=', ses.nis, 'ses.nama=', ses.nama, '=> uid=', uid);
+    return uid;
   }
   function isAdmin(ses) { return ses && (ses.role === 'admin' || ses.id === 'admin'); }
 
