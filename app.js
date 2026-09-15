@@ -694,7 +694,7 @@
   }
   function showPage(name) {
     var _ses = getSession();
-    if (name === 'admin' && _ses && _ses.role !== 'guru') name = 'kirim'; /* murid tidak dapat membuka admin */
+    if (name === 'admin' && _ses && _ses.role === 'murid' && !adminUnlocked()) name = 'kirim'; /* murid tidak dapat membuka admin kecuali sudah unlock admin */
     if (name === 'galeri' && !bolehLihatGaleri()) name = 'kirim'; /* galeri khusus admin & GTK */
     if (name === 'chat' && !_ses && !adminUnlocked()) name = 'kirim'; /* chat khusus user login */
     updateGaleriNav();
@@ -1197,6 +1197,12 @@
       $('admin-panel').style.display = 'block';
       renderAdmin();
       initGasUi();
+      // auto-sync: tarik karya terbaru dari Sheets agar puisi murid di HP lain langsung tampil
+      if (gasActive() && online()) {
+        gasPull().then(function () { renderAdmin(); });
+        flushOutbox();
+        gasChatPull();
+      }
     } else {
       $('admin-login').style.display = 'block';
       $('admin-panel').style.display = 'none';
