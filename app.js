@@ -545,10 +545,17 @@
     var g = document.querySelector('#nav-bottom a[data-nav="galeri"]');
     if (g) g.style.display = bolehLihatGaleri() ? '' : 'none';
   }
+  function updateChatNav() {
+    var ses = getSession();
+    var chatNav = $('nav-chat');
+    var show = ses || adminUnlocked();
+    if (chatNav) chatNav.style.display = show ? '' : 'none';
+  }
   function showPage(name) {
     var _ses = getSession();
     if (name === 'admin' && _ses && _ses.role !== 'guru') name = 'materi'; /* murid tidak dapat membuka admin */
     if (name === 'galeri' && !bolehLihatGaleri()) name = 'materi'; /* galeri khusus admin & GTK */
+    if (name === 'chat' && !_ses && !adminUnlocked()) name = 'materi'; /* chat khusus user login */
     updateGaleriNav();
     document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
     var pg = $('page-' + name);
@@ -657,6 +664,7 @@
     var ses = getSession();
     var box = $('sesi-box'), namaEl = $('sesi-nama'), adminNav = $('hamburger-admin'), adminKeluar = $('admin-keluar');
     updateGaleriNav();
+    updateChatNav();
     if (!box || !namaEl) return;
     if (ses) {
       var peran = ses.role === 'guru' ? 'Guru/Tendik (GTK)' : 'Murid · Kelas ' + ses.kelasDigit;
