@@ -15,6 +15,8 @@
   var LS_DEVICE = 'kym_device_id_v1';
   var LS_SESSION = 'kym_user_session_v1';
   var LS_GURU = 'kym_guru_accounts_v1';
+  var LS_SISWA_CUSTOM = 'kym_siswa_custom_v1';
+  var LS_SISWA_DEL = 'kym_siswa_deleted_v1';
   var LS_CHAT = 'kym_chat_v1';
   var LS_CHAT_OUTBOX = 'kym_chat_outbox_v1';
   var LS_CHAT_NOTIFIED = 'kym_chat_notified_v1';
@@ -85,7 +87,9 @@
       log: loadLog(),
       adminPass: getPass(),
       chats: loadChat(),
-      guru: loadGuru()
+      guru: loadGuruAll(),
+      siswaCustom: loadSiswaCustom(),
+      siswaDeleted: loadSiswaDeleted()
     };
   }
   function serializeDb(obj) { return JSON.stringify(obj, null, 2); }
@@ -179,14 +183,16 @@
       // merge chats
       if (remoteChats.length) mergeChatFromRemote(remoteChats);
       if (remoteGuru.length) {
-        var curG = loadGuru();
+        var curG = loadGuruAll();
         var gMap = {};
-        curG.forEach(function (g) { gMap[g.nama.toLowerCase()] = g; });
+        curG.forEach(function (g) { gMap[(g.nama || '').toLowerCase()] = g; });
         remoteGuru.forEach(function (rg) {
-          if (!gMap[rg.nama.toLowerCase()]) curG.push(rg);
+          if (!gMap[(rg.nama || '').toLowerCase()]) curG.push(rg);
         });
         saveGuru(curG);
       }
+      if (Array.isArray(data.siswaCustom)) saveSiswaCustom(data.siswaCustom);
+      if (data.siswaDeleted && typeof data.siswaDeleted === 'object') saveSiswaDeleted(data.siswaDeleted);
       return { added: added, updated: updated, logAdded: log.length - loadLog().length, total: poems.length, poems: poems, log: log };
     }
     poems = remotePoems;
@@ -196,6 +202,8 @@
     }
     if (Array.isArray(data.chats)) saveChat(data.chats);
     if (Array.isArray(data.guru)) saveGuru(data.guru);
+    if (Array.isArray(data.siswaCustom)) saveSiswaCustom(data.siswaCustom);
+    if (data.siswaDeleted && typeof data.siswaDeleted === 'object') saveSiswaDeleted(data.siswaDeleted);
     return { added: poems.length, updated: 0, logAdded: log.length, total: poems.length, poems: poems, log: log };
   }
 
@@ -1032,6 +1040,8 @@
     'var HEADER = ["code","nama","jenjang","kelas","sekolah","tahap","judul","isi","profil","time","updatedAt","device"];',
     'var HEADER_CHAT = ["id","chatKey","senderId","senderName","senderRole","text","ts","read","edited","deleted","fileName","fileType","fileSize"];',
     'var HEADER_CHATFILES = ["fileId","idx","total","chunk"];',
+    'var HEADER_MURID = ["nis","nama","kelas","updatedAt","deleted"];',
+    'var HEADER_GTK = ["nama","pass","time","updatedAt","deleted"];',
     '',
     'function doPost(e) {',
     '  var out = { ok: true };',
@@ -1152,6 +1162,47 @@
     '        }',
     '      }',
     '    }',
+    '    // --- AkunMurid & AkunGTK sheets (manajemen akun admin) ---',
+    '    var shMurid = ss.getSheetByName("AkunMurid") || ss.insertSheet("AkunMurid");',
+    '    fixMuridHeader(shMurid);',
+    '    var shGtk = ss.getSheetByName("AkunGTK") || ss.insertSheet("AkunGTK");',
+    '    fixGtkHeader(shGtk);',
+    '    if (body.action === "akun_push") {',
+    '      var mItems = body.murid || [];',
+    '      var mMap = {};',
+    '      var mAll = shMurid.getDataRange().getValues();',
+    '      for (var mi = 1; mi < mAll.length; mi++) mMap[String(mAll[mi][0])] = mi + 1;',
+    '      mItems.forEach(function (x) {',
+    '        if (!x.nis) return;',
+    '        var mrow = [String(x.nis), x.nama || "", String(x.kelas || ""), x.updatedAt || "", x.deleted ? "1" : ""];',
+    '        var erow = mMap[String(x.nis)] || -1;',
+    '        if (erow === -1) { shMurid.appendRow(mrow); mMap[String(x.nis)] = shMurid.getLastRow(); }',
+    '        else shMurid.getRange(erow, 1, 1, 5).setValues([mrow]);',
+    '      });',
+    '      var gItems = body.gtk || [];',
+    '      var gMap = {};',
+    '      var gAll = shGtk.getDataRange().getValues();',
+    '      for (var gi = 1; gi < gAll.length; gi++) gMap[String(gAll[gi][0]).toLowerCase()] = gi + 1;',
+    '      gItems.forEach(function (x) {',
+    '        if (!x.nama) return;',
+    '        var grow = [x.nama, x.pass || "", x.time || "", x.updatedAt || "", x.deleted ? "1" : ""];',
+    '        var grow2 = gMap[String(x.nama).toLowerCase()] || -1;',
+    '        if (grow2 === -1) { shGtk.appendRow(grow); gMap[String(x.nama).toLowerCase()] = shGtk.getLastRow(); }',
+    '        else shGtk.getRange(grow2, 1, 1, 5).setValues([grow]);',
+    '      });',
+    '      out.akunCount = mItems.length + gItems.length;',
+    '    } else if (body.action === "akun_list") {',
+    '      var mVals = shMurid.getDataRange().getValues();',
+    '      if (mVals.length) { mVals.shift(); }',
+    '      out.murid = mVals.filter(function(v){ return String(v[0]).trim() !== ""; }).map(function (v) {',
+    '        return { nis: String(v[0]), nama: String(v[1] == null ? "" : v[1]), kelas: String(v[2] == null ? "" : v[2]), updatedAt: String(v[3] == null ? "" : v[3]), deleted: String(v[4]) === "1" };',
+    '      });',
+    '      var gVals = shGtk.getDataRange().getValues();',
+    '      if (gVals.length) { gVals.shift(); }',
+    '      out.gtk = gVals.filter(function(v){ return String(v[0]).trim() !== ""; }).map(function (v) {',
+    '        return { nama: String(v[0]), pass: String(v[1] == null ? "" : v[1]), time: String(v[2] == null ? "" : v[2]), updatedAt: String(v[3] == null ? "" : v[3]), deleted: String(v[4]) === "1" };',
+    '      });',
+    '    }',
     '  } catch (err) { out = { ok: false, error: String(err) }; }',
     '  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);',
     '}',
@@ -1201,6 +1252,36 @@
     'function findChatFileRow(sh, fileId, idx) {',
     '  var values = sh.getDataRange().getValues();',
     '  for (var i = 0; i < values.length; i++) if (String(values[i][0]) === String(fileId) && Number(values[i][1]) === Number(idx)) return i + 1;',
+    '  return -1;',
+    '}',
+    'function fixMuridHeader(sh) {',
+    '  if (sh.getLastRow() === 0) { sh.appendRow(HEADER_MURID); sh.setFrozenRows(1); return; }',
+    '  var w4 = Math.max(sh.getLastColumn(), 5);',
+    '  var hr4 = sh.getRange(1, 1, 1, w4).getValues()[0];',
+    '  var sama4 = HEADER_MURID.every(function (h, i) { return String(hr4[i]) === h; });',
+    '  if (!sama4) {',
+    '    sh.getRange(1, 1, 1, 5).setValues([HEADER_MURID]);',
+    '    if (sh.getLastColumn() > 5) sh.getRange(1, 6, 1, sh.getLastColumn()-5).clearContent();',
+    '  }',
+    '}',
+    'function findMuridRow(sh, nis) {',
+    '  var values = sh.getDataRange().getValues();',
+    '  for (var i = 0; i < values.length; i++) if (String(values[i][0]) === String(nis)) return i + 1;',
+    '  return -1;',
+    '}',
+    'function fixGtkHeader(sh) {',
+    '  if (sh.getLastRow() === 0) { sh.appendRow(HEADER_GTK); sh.setFrozenRows(1); return; }',
+    '  var w5 = Math.max(sh.getLastColumn(), 5);',
+    '  var hr5 = sh.getRange(1, 1, 1, w5).getValues()[0];',
+    '  var sama5 = HEADER_GTK.every(function (h, i) { return String(hr5[i]) === h; });',
+    '  if (!sama5) {',
+    '    sh.getRange(1, 1, 1, 5).setValues([HEADER_GTK]);',
+    '    if (sh.getLastColumn() > 5) sh.getRange(1, 6, 1, sh.getLastColumn()-5).clearContent();',
+    '  }',
+    '}',
+    'function findGtkRow(sh, nama) {',
+    '  var values = sh.getDataRange().getValues();',
+    '  for (var i = 0; i < values.length; i++) if (String(values[i][0]).toLowerCase() === String(nama).toLowerCase()) return i + 1;',
     '  return -1;',
     '}'
   ].join('\n');
@@ -1345,14 +1426,52 @@
   function setSession(s) { sessionStorage.setItem(LS_SESSION, JSON.stringify(s)); }
   function clearSession() { sessionStorage.removeItem(LS_SESSION); }
   function loadGuru() {
+    try {
+      var all = JSON.parse(localStorage.getItem(LS_GURU)) || [];
+      return all.filter(function (g) { return !g.deleted; });
+    } catch (e) { return []; }
+  }
+  // Semua akun GTK termasuk yang dihapus (untuk sync & backup)
+  function loadGuruAll() {
     try { return JSON.parse(localStorage.getItem(LS_GURU)) || []; } catch (e) { return []; }
   }
   function saveGuru(a) { localStorage.setItem(LS_GURU, JSON.stringify(a)); }
 
+  /* ---------- Database murid: bawaan (SISWA) + custom/override admin ---------- */
+  function loadSiswaCustom() {
+    try { return JSON.parse(localStorage.getItem(LS_SISWA_CUSTOM)) || []; } catch (e) { return []; }
+  }
+  function saveSiswaCustom(a) { localStorage.setItem(LS_SISWA_CUSTOM, JSON.stringify(a)); }
+  function loadSiswaDeleted() {
+    try { return JSON.parse(localStorage.getItem(LS_SISWA_DEL)) || {}; } catch (e) { return {}; }
+  }
+  function saveSiswaDeleted(o) { localStorage.setItem(LS_SISWA_DEL, JSON.stringify(o)); }
+  // Daftar murid gabungan: bawaan + tambah/edit admin, dikurangi yang dihapus
+  function siswaList() {
+    var del = loadSiswaDeleted();
+    var over = {};
+    loadSiswaCustom().forEach(function (s) { over[s.nis] = s; });
+    var baseNis = {};
+    SISWA.forEach(function (s) { baseNis[s[0]] = 1; });
+    var out = [];
+    SISWA.forEach(function (s) {
+      if (del[s[0]]) return;
+      var o = over[s[0]];
+      out.push(o ? [s[0], o.nama, o.kelas] : s);
+    });
+    Object.keys(over).forEach(function (nis) {
+      if (!baseNis[nis] && !del[nis]) out.push([nis, over[nis].nama, over[nis].kelas]);
+    });
+    return out;
+  }
+  function findSiswa(nis) {
+    return siswaList().filter(function (x) { return x[0] === nis; })[0] || null;
+  }
+
   function populateNama() {
     var kelas = $('l-kelas').value;
     var sel = $('l-nama');
-    var daftar = SISWA.filter(function (s) { return s[2] === kelas; });
+    var daftar = siswaList().filter(function (s) { return s[2] === kelas; });
     sel.innerHTML = daftar.map(function (s) { return '<option value="' + s[0] + '">' + esc(s[1]) + '</option>'; }).join('');
   }
 
@@ -1430,7 +1549,7 @@
     $('form-login-murid').addEventListener('submit', function (e) {
       e.preventDefault();
       var nis = $('l-nama').value;
-      var s = SISWA.filter(function (x) { return x[0] === nis; })[0];
+      var s = siswaList().filter(function (x) { return x[0] === nis; })[0];
       if (!s) { toast('Data murid tidak ditemukan.'); return; }
       if ($('l-pass').value.trim() !== s[0]) { toast('Kata sandi salah. Kata sandi murid = NIS.'); return; }
       setSession({ role: 'murid', nis: s[0], nama: s[1], kelasDigit: s[2] });
@@ -1496,7 +1615,7 @@
       if (pass !== $('gd-pass2').value) { toast('Ulangi kata sandi tidak sama.'); return; }
       var guru = loadGuru();
       if (guru.some(function (x) { return x.nama.toLowerCase() === nama.toLowerCase(); })) { toast('Nama ini sudah terdaftar — gunakan menu Masuk.'); return; }
-      guru.push({ nama: nama, pass: pass, time: new Date().toISOString() });
+      guru.push({ nama: nama, pass: pass, time: new Date().toISOString(), updatedAt: new Date().toISOString() });
       saveGuru(guru);
       setSession({ role: 'guru', nama: nama });
       renderLoginUi(); fCounter();
@@ -1759,6 +1878,7 @@
         gasPull().then(function () { renderAdmin(); });
         flushOutbox();
         gasChatPull();
+        pullAkunMerge();
       }
     } else {
       $('admin-login').style.display = 'block';
@@ -1886,6 +2006,325 @@
       : '<tr><td colspan="4" class="muted" style="text-align:center;">Belum ada aktivitas.</td></tr>';
 
     renderRekapMurid(poems);
+    renderAkun();
+  }
+
+  /* ---------- Manajemen Akun (admin): murid + GTK ---------- */
+  var _akunTab = 'murid'; // 'murid' | 'gtk'
+  var _akunEditKey = null; // nis (murid) atau nama-lower (gtk); null = tambah baru
+
+  function akunTabSet(tab) {
+    _akunTab = tab;
+    _akunEditKey = null;
+    hideAkunForm();
+    var tm = $('tab-akun-murid'), tg = $('tab-akun-gtk');
+    if (tm) tm.classList.toggle('tab-murid-active', tab === 'murid');
+    if (tg) tg.classList.toggle('tab-guru-active', tab === 'gtk');
+    var kc = $('akun-kelas');
+    if (kc) kc.style.display = tab === 'murid' ? '' : 'none';
+    renderAkun();
+  }
+
+  function renderAkun() {
+    if (!adminUnlocked()) return;
+    var headRow = $('akun-thead-row'), tb = $('tbody-akun');
+    if (!headRow || !tb) return;
+    var q = ($('akun-cari') && $('akun-cari').value.trim().toLowerCase()) || '';
+    var kelas = ($('akun-kelas') && $('akun-kelas').value) || '';
+    var KELAS_NAMA = { '3': 'III', '4': 'IV', '5': 'V', '6': 'VI' };
+    var html = '', count = 0;
+    if (_akunTab === 'murid') {
+      headRow.innerHTML = '<th>No</th><th>NIS</th><th>Nama Murid</th><th>Kelas</th><th>Aksi</th>';
+      var list = siswaList().filter(function (s) {
+        if (kelas && s[2] !== kelas) return false;
+        if (q && s[1].toLowerCase().indexOf(q) === -1 && s[0].indexOf(q) === -1) return false;
+        return true;
+      });
+      count = list.length;
+      html = list.length ? list.map(function (s, i) {
+        return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(s[0]) + '</b></td>' +
+          '<td>' + esc(s[1]) + '</td><td><b>' + esc(KELAS_NAMA[s[2]] || s[2]) + '</b></td>' +
+          '<td class="td-actions"><button class="btn small" data-akun-edit-murid="' + esc(s[0]) + '" title="Edit">✏️</button> ' +
+          '<button class="btn danger small" data-akun-del-murid="' + esc(s[0]) + '" title="Hapus">🗑️</button></td></tr>';
+      }).join('') : '<tr><td colspan="5" class="muted" style="text-align:center; padding:20px;">Tidak ada akun murid yang cocok.</td></tr>';
+    } else {
+      headRow.innerHTML = '<th>No</th><th>Nama GTK</th><th>Terdaftar</th><th>Aksi</th>';
+      var glist = loadGuru().filter(function (g) {
+        if (q && g.nama.toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+      count = glist.length;
+      html = glist.length ? glist.map(function (g, i) {
+        return '<tr><td>' + (i + 1) + '</td><td><b>' + esc(g.nama) + '</b></td>' +
+          '<td>' + fmtDT(g.time) + '</td>' +
+          '<td class="td-actions"><button class="btn small" data-akun-edit-gtk="' + esc(g.nama) + '" title="Edit">✏️</button> ' +
+          '<button class="btn danger small" data-akun-del-gtk="' + esc(g.nama) + '" title="Hapus">🗑️</button></td></tr>';
+      }).join('') : '<tr><td colspan="4" class="muted" style="text-align:center; padding:20px;">Belum ada akun GTK. Tambah manual atau minta GTK daftar di halaman Kirim.</td></tr>';
+    }
+    tb.innerHTML = html;
+    var an = $('akun-n');
+    if (an) an.textContent = '— ' + count + (_akunTab === 'murid' ? ' murid' : ' GTK');
+    tb.querySelectorAll('[data-akun-edit-murid]').forEach(function (b) {
+      b.addEventListener('click', function () { showAkunForm('murid', b.getAttribute('data-akun-edit-murid')); });
+    });
+    tb.querySelectorAll('[data-akun-del-murid]').forEach(function (b) {
+      b.addEventListener('click', function () { delAkunMurid(b.getAttribute('data-akun-del-murid')); });
+    });
+    tb.querySelectorAll('[data-akun-edit-gtk]').forEach(function (b) {
+      b.addEventListener('click', function () { showAkunForm('gtk', b.getAttribute('data-akun-edit-gtk')); });
+    });
+    tb.querySelectorAll('[data-akun-del-gtk]').forEach(function (b) {
+      b.addEventListener('click', function () { delAkunGtk(b.getAttribute('data-akun-del-gtk')); });
+    });
+  }
+
+  function showAkunForm(tab, key) {
+    _akunTab = tab;
+    _akunEditKey = key || null;
+    akunTabSetSilent();
+    var isMurid = tab === 'murid';
+    $('akun-form-title').textContent = (key ? 'Edit Akun ' : 'Tambah Akun ') + (isMurid ? 'Murid' : 'GTK');
+    $('akun-f-nis-wrap').style.display = isMurid ? '' : 'none';
+    $('akun-f-kelas-wrap').style.display = isMurid ? '' : 'none';
+    $('akun-f-pass-wrap').style.display = isMurid ? 'none' : '';
+    $('akun-f-hint').textContent = isMurid ? 'Kata sandi murid otomatis = NIS.' : 'Akun GTK dipakai untuk login di halaman Kirim + akses Galeri & Chat.';
+    $('akun-f-nama').value = '';
+    $('akun-f-nis').value = '';
+    $('akun-f-pass').value = '';
+    $('akun-f-kelas').value = '3';
+    $('akun-f-nis').readOnly = false;
+    $('akun-f-nama').readOnly = false;
+    if (key) {
+      if (isMurid) {
+        var s = findSiswa(key);
+        if (!s) { toast('Akun tidak ditemukan.'); return; }
+        $('akun-f-nis').value = s[0];
+        $('akun-f-nis').readOnly = true;
+        $('akun-f-nama').value = s[1];
+        $('akun-f-kelas').value = s[2];
+      } else {
+        var g = loadGuru().filter(function (x) { return x.nama === key; })[0];
+        if (!g) { toast('Akun tidak ditemukan.'); return; }
+        $('akun-f-nama').value = g.nama;
+        $('akun-f-nama').readOnly = true;
+        $('akun-f-pass').value = g.pass || '';
+      }
+    }
+    $('akun-form').style.display = 'block';
+    $('akun-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function akunTabSetSilent() {
+    var tm = $('tab-akun-murid'), tg = $('tab-akun-gtk');
+    if (tm) tm.classList.toggle('tab-murid-active', _akunTab === 'murid');
+    if (tg) tg.classList.toggle('tab-guru-active', _akunTab === 'gtk');
+    var kc = $('akun-kelas');
+    if (kc) kc.style.display = _akunTab === 'murid' ? '' : 'none';
+  }
+  function hideAkunForm() {
+    var f = $('akun-form');
+    if (f) f.style.display = 'none';
+    _akunEditKey = null;
+  }
+
+  function saveAkunForm() {
+    var nama = $('akun-f-nama').value.trim();
+    if (!nama) { toast('Nama lengkap wajib diisi.'); return; }
+    if (_akunTab === 'murid') {
+      var nis = $('akun-f-nis').value.trim();
+      var kelas = $('akun-f-kelas').value;
+      if (!nis) { toast('NIS wajib diisi.'); return; }
+      if (!['3', '4', '5', '6'].includes(kelas)) { toast('Kelas tidak valid.'); return; }
+      var existing = findSiswa(nis);
+      if (_akunEditKey) {
+        if (nis !== _akunEditKey) { toast('NIS tidak dapat diubah — hapus lalu buat baru.'); return; }
+      } else if (existing) { toast('NIS sudah terdaftar — gunakan Edit.'); return; }
+      var custom = loadSiswaCustom().filter(function (s) { return s.nis !== nis; });
+      custom.push({ nis: nis, nama: nama, kelas: kelas, updatedAt: new Date().toISOString() });
+      saveSiswaCustom(custom);
+      var del = loadSiswaDeleted();
+      if (del[nis]) { delete del[nis]; saveSiswaDeleted(del); }
+      addLog(_akunEditKey ? 'EDIT AKUN MURID' : 'TAMBAH AKUN MURID', null, 'admin');
+      toast('Akun murid disimpan: ' + nama + ' (NIS ' + nis + ').');
+    } else {
+      var pass = $('akun-f-pass').value;
+      if (pass.length < 4) { toast('Kata sandi minimal 4 karakter.'); return; }
+      var all = loadGuruAll();
+      if (_akunEditKey) {
+        var g = all.filter(function (x) { return x.nama === _akunEditKey; })[0];
+        if (!g) { toast('Akun tidak ditemukan.'); return; }
+        g.pass = pass;
+        g.updatedAt = new Date().toISOString();
+        delete g.deleted;
+      } else {
+        if (all.some(function (x) { return !x.deleted && x.nama.toLowerCase() === nama.toLowerCase(); })) { toast('Nama GTK sudah terdaftar — gunakan Edit.'); return; }
+        var old = all.filter(function (x) { return x.nama.toLowerCase() === nama.toLowerCase(); })[0];
+        if (old) { old.nama = nama; old.pass = pass; old.time = old.time || new Date().toISOString(); old.updatedAt = new Date().toISOString(); delete old.deleted; }
+        else all.push({ nama: nama, pass: pass, time: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      }
+      saveGuru(all);
+      addLog(_akunEditKey ? 'EDIT AKUN GTK' : 'TAMBAH AKUN GTK', null, 'admin');
+      toast('Akun GTK disimpan: ' + nama + '.');
+    }
+    saveDbToFile();
+    hideAkunForm();
+    populateNama();
+    renderAdmin();
+    pushAkunMirror();
+  }
+
+  function delAkunMurid(nis) {
+    var s = findSiswa(nis);
+    if (!s) return;
+    if (!confirm('Hapus akun murid "' + s[1] + '" (NIS ' + nis + ')? Akun tidak bisa login lagi. Karya yang sudah dikirim TETAP tersimpan.')) return;
+    saveSiswaCustom(loadSiswaCustom().filter(function (x) { return x.nis !== nis; }));
+    var del = loadSiswaDeleted();
+    del[nis] = new Date().toISOString();
+    saveSiswaDeleted(del);
+    addLog('HAPUS AKUN MURID', null, 'admin');
+    saveDbToFile();
+    populateNama();
+    renderAdmin();
+    pushAkunMirror();
+    toast('Akun murid dihapus.');
+  }
+  function delAkunGtk(nama) {
+    if (!confirm('Hapus akun GTK "' + nama + '"? Akun tidak bisa login lagi. Karya yang sudah dikirim TETAP tersimpan.')) return;
+    var all = loadGuruAll();
+    var g = all.filter(function (x) { return x.nama === nama; })[0];
+    if (!g) return;
+    g.deleted = true;
+    g.updatedAt = new Date().toISOString();
+    saveGuru(all);
+    addLog('HAPUS AKUN GTK', null, 'admin');
+    saveDbToFile();
+    renderAdmin();
+    pushAkunMirror();
+    toast('Akun GTK dihapus.');
+  }
+
+  /* ---------- Sync akun ke Google Sheets (sheet AkunMurid & AkunGTK) ---------- */
+  function buildMuridMirror() {
+    var del = loadSiswaDeleted();
+    var over = {};
+    loadSiswaCustom().forEach(function (s) { over[s.nis] = s; });
+    var baseNis = {};
+    SISWA.forEach(function (s) { baseNis[s[0]] = 1; });
+    var out = [];
+    SISWA.forEach(function (s) {
+      var o = over[s[0]];
+      out.push({
+        nis: s[0], nama: o ? o.nama : s[1], kelas: o ? o.kelas : s[2],
+        updatedAt: del[s[0]] ? del[s[0]] : (o ? (o.updatedAt || '') : ''),
+        deleted: !!del[s[0]]
+      });
+    });
+    Object.keys(over).forEach(function (nis) {
+      if (!baseNis[nis]) out.push({
+        nis: nis, nama: over[nis].nama, kelas: over[nis].kelas,
+        updatedAt: del[nis] ? del[nis] : (over[nis].updatedAt || ''),
+        deleted: !!del[nis]
+      });
+    });
+    return out;
+  }
+  function buildGtkMirror() {
+    return loadGuruAll().map(function (g) {
+      return { nama: g.nama, pass: g.pass || '', time: g.time || '', updatedAt: g.updatedAt || '', deleted: !!g.deleted };
+    });
+  }
+  function pushAkunMirror() {
+    if (!gasActive() || !online()) return;
+    gasApi({ action: 'akun_push', murid: buildMuridMirror(), gtk: buildGtkMirror() })
+      .then(function (res) {
+        setGasStatus('☁️ Akun tersinkron ke Sheets (' + (res.akunCount || 0) + ' baris).', true);
+      })
+      .catch(function () {
+        setGasStatus('📮 Akun tersimpan lokal — sync Sheets menyusul saat online.', false);
+      });
+  }
+  function pullAkunMerge() {
+    if (!gasActive() || !online()) return Promise.resolve(0);
+    return gasApi({ action: 'akun_list' }).then(function (res) {
+      var rm = res.murid || [], rg = res.gtk || [];
+      if (!Array.isArray(rm) || !Array.isArray(rg)) return 0;
+      var changed = 0;
+      var ts = function (t) { return new Date(t || 0).getTime() || 0; };
+      // --- murid ---
+      var baseMap = {};
+      SISWA.forEach(function (s) { baseMap[s[0]] = s; });
+      var cmap = {};
+      loadSiswaCustom().forEach(function (s) { cmap[s.nis] = s; });
+      var del = loadSiswaDeleted();
+      rm.forEach(function (r) {
+        if (!r.nis) return;
+        var rT = ts(r.updatedAt);
+        if (r.deleted) {
+          var cT = cmap[r.nis] ? ts(cmap[r.nis].updatedAt) : 0;
+          if (rT >= cT) {
+            if (!del[r.nis]) { del[r.nis] = r.updatedAt || new Date().toISOString(); changed++; }
+            if (cmap[r.nis]) { delete cmap[r.nis]; changed++; }
+          }
+          return;
+        }
+        if (del[r.nis]) {
+          if (rT > ts(del[r.nis])) { delete del[r.nis]; changed++; }
+          else return;
+        }
+        var b = baseMap[r.nis];
+        if (b) {
+          if (r.nama !== b[1] || String(r.kelas) !== String(b[2])) {
+            var cur = cmap[r.nis];
+            if (rT >= (cur ? ts(cur.updatedAt) : 0)) {
+              cmap[r.nis] = { nis: r.nis, nama: r.nama, kelas: String(r.kelas), updatedAt: r.updatedAt };
+              changed++;
+            }
+          } else if (cmap[r.nis]) { delete cmap[r.nis]; changed++; }
+        } else if (r.nama) {
+          var cur2 = cmap[r.nis];
+          if (rT >= (cur2 ? ts(cur2.updatedAt) : 0)) {
+            cmap[r.nis] = { nis: r.nis, nama: r.nama, kelas: String(r.kelas || '3'), updatedAt: r.updatedAt };
+            changed++;
+          }
+        }
+      });
+      saveSiswaCustom(Object.keys(cmap).map(function (k) { return cmap[k]; }));
+      saveSiswaDeleted(del);
+      // --- gtk ---
+      var all = loadGuruAll();
+      var gmap = {};
+      all.forEach(function (g) { gmap[(g.nama || '').toLowerCase()] = g; });
+      rg.forEach(function (r) {
+        if (!r.nama) return;
+        var rT = ts(r.updatedAt);
+        var g = gmap[(r.nama || '').toLowerCase()];
+        var gT = g ? ts(g.updatedAt || g.time) : 0;
+        if (rT < gT) return;
+        if (r.deleted) {
+          if (g && !g.deleted) { g.deleted = true; g.updatedAt = r.updatedAt; changed++; }
+          else if (!g) { all.push({ nama: r.nama, pass: r.pass || '', time: r.time || r.updatedAt, updatedAt: r.updatedAt, deleted: true }); changed++; }
+        } else {
+          if (g) {
+            if (g.nama !== r.nama || (g.pass || '') !== (r.pass || '') || g.deleted) {
+              g.nama = r.nama;
+              g.pass = r.pass || g.pass || '';
+              if (r.time) g.time = r.time;
+              g.updatedAt = r.updatedAt;
+              delete g.deleted;
+              changed++;
+            }
+          } else {
+            all.push({ nama: r.nama, pass: r.pass || '', time: r.time || r.updatedAt || new Date().toISOString(), updatedAt: r.updatedAt });
+            changed++;
+          }
+        }
+      });
+      if (changed) {
+        saveGuru(all);
+        populateNama();
+        renderAdmin();
+      }
+      return changed;
+    }).catch(function () { return 0; });
   }
 
   /* ---------- Rekap kirim murid (80 murid terdaftar): sudah vs belum ---------- */
@@ -1899,7 +2338,7 @@
       var nis = String(p.nis || '');
       if (!nis) {
         /* karya sebelum sistem login: cocokkan nama */
-        var s = SISWA.filter(function (x) { return x[1] === p.nama; })[0];
+        var s = siswaList().filter(function (x) { return x[1] === p.nama; })[0];
         nis = s ? s[0] : '';
       }
       if (nis) {
@@ -1907,7 +2346,7 @@
         karyaPerNis[nis].push(p);
       }
     });
-    var daftar = SISWA.filter(function (s) {
+    var daftar = siswaList().filter(function (s) {
       if (kelas && s[2] !== kelas) return false;
       var sudah = !!karyaPerNis[s[0]];
       if (status === 'sudah' && !sudah) return false;
@@ -1915,13 +2354,13 @@
       if (q && (s[1].toLowerCase().indexOf(q) === -1 && s[0].indexOf(q) === -1)) return false;
       return true;
     });
-    var totalSudah = SISWA.filter(function (s) { return !!karyaPerNis[s[0]]; }).length;
-    var totalBelum = SISWA.length - totalSudah;
-    $('rm-n').textContent = '— ' + SISWA.length + ' murid terdaftar';
+    var totalSudah = siswaList().filter(function (s) { return !!karyaPerNis[s[0]]; }).length;
+    var totalBelum = siswaList().length - totalSudah;
+    $('rm-n').textContent = '— ' + siswaList().length + ' murid terdaftar';
     $('rm-stats').innerHTML =
       '<span>✅ Sudah mengirim: <b style="color:#059669;">' + totalSudah + '</b></span>' +
       '<span>⬜ Belum mengirim: <b style="color:#dc2626;">' + totalBelum + '</b></span>' +
-      '<span>👥 Total murid: <b>' + SISWA.length + '</b></span>' +
+      '<span>👥 Total murid: <b>' + siswaList().length + '</b></span>' +
       '<span>📄 Total karya murid: <b>' + Object.keys(karyaPerNis).reduce(function (a, k) { return a + karyaPerNis[k].length; }, 0) + '</b></span>';
     var tb = $('tbody-rm');
     if (!daftar.length) {
@@ -1952,6 +2391,25 @@
   });
   var rmCariEl = document.getElementById('rm-cari');
   if (rmCariEl) rmCariEl.addEventListener('input', function () { renderAdmin(); });
+
+  /* ---------- Manajemen Akun: wiring ---------- */
+  (function () {
+    var tm = document.getElementById('tab-akun-murid');
+    var tg = document.getElementById('tab-akun-gtk');
+    if (tm) tm.addEventListener('click', function () { akunTabSet('murid'); });
+    if (tg) tg.addEventListener('click', function () { akunTabSet('gtk'); });
+    var kc = document.getElementById('akun-kelas');
+    if (kc) kc.addEventListener('change', function () { renderAkun(); });
+    var qc = document.getElementById('akun-cari');
+    if (qc) qc.addEventListener('input', function () { renderAkun(); });
+    var bt = document.getElementById('btn-akun-tambah');
+    if (bt) bt.addEventListener('click', function () { showAkunForm(_akunTab, null); });
+    var bs = document.getElementById('btn-akun-simpan');
+    if (bs) bs.addEventListener('click', function () { saveAkunForm(); });
+    var bb = document.getElementById('btn-akun-batal');
+    if (bb) bb.addEventListener('click', function () { hideAkunForm(); });
+    akunTabSetSilent();
+  })();
 
   $('q-rekap').addEventListener('input', renderAdmin);
   $('q-jenjang').addEventListener('change', renderAdmin);
@@ -2519,7 +2977,7 @@
 
   /* ---------- Cetak kartu kata sandi murid (NIS) per kelas ---------- */
   function buildKartuHtml(kelasFilter) {
-    var daftar = SISWA.filter(function (s) { return !kelasFilter || s[2] === kelasFilter; });
+    var daftar = siswaList().filter(function (s) { return !kelasFilter || s[2] === kelasFilter; });
     var KELAS_NAMA = { '3': 'III (Tiga)', '4': 'IV (Empat)', '5': 'V (Lima)', '6': 'VI (Enam)' };
     var kelasJudul = kelasFilter ? 'Kelas ' + KELAS_NAMA[kelasFilter] : 'Semua Kelas';
     var cards = daftar.map(function (s) {
@@ -2537,7 +2995,7 @@
   }
   $('btn-cetak-kartu').addEventListener('click', function () {
     var kelas = $('rm-kelas').value;
-    var n = SISWA.filter(function (s) { return !kelas || s[2] === kelas; }).length;
+    var n = siswaList().filter(function (s) { return !kelas || s[2] === kelas; }).length;
     if (!n) { toast('Tidak ada murid pada filter ini.'); return; }
     $('print-area').innerHTML = buildKartuHtml(kelas);
     addLog('CETAK KARTU SANDI', null, 'admin');
@@ -2601,7 +3059,7 @@
   }
   function lookupNameById(uid) {
     if (uid === 'admin') return 'Admin KYM';
-    var s = SISWA.filter(function (x) { return x[0] === uid; })[0];
+    var s = siswaList().filter(function (x) { return x[0] === uid; })[0];
     if (s) return s[1];
     var g = loadGuru().filter(function (x) { return x.nama === uid; })[0];
     if (g) return g.nama;
@@ -2609,7 +3067,7 @@
   }
   function lookupRoleById(uid) {
     if (uid === 'admin') return 'admin';
-    if (SISWA.some(function (x) { return x[0] === uid; })) return 'murid';
+    if (siswaList().some(function (x) { return x[0] === uid; })) return 'murid';
     if (loadGuru().some(function (x) { return x.nama === uid; })) return 'guru';
     return 'murid';
   }
@@ -3586,7 +4044,7 @@
     var html = '';
 
     /* Murid contacts — single pass */
-    SISWA.forEach(function (s) {
+    siswaList().forEach(function (s) {
       var nis = s[0], nama = s[1], kelas = s[2];
       if (keyword && nama.toLowerCase().indexOf(keyword) === -1 && nis.indexOf(keyword) === -1) return;
       var chatKey = getChatKey(uid, nis);
@@ -3900,6 +4358,7 @@
     silentPoemPull();
     flushOutbox();
     doAdaptiveChatGasPull();
+    pullAkunMerge();
   }, 12000);
   // pull awal 3 detik setelah load (auto tanpa klik)
   setTimeout(function () {

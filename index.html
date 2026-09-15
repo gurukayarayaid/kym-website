@@ -867,6 +867,66 @@
           </div>
         </div>
 
+        <div class="q" style="border-top:2px solid #fcd34d;">
+          <h3>👥 Manajemen Akun <span class="muted" id="akun-n" style="font-weight:500; font-size:.85rem;"></span></h3>
+          <p class="muted">Kelola akun login murid (NIS) dan GTK: tambah manual, edit, hapus. Kata sandi murid = NIS. Perubahan tersimpan di perangkat ini dan tersinkron ke Google Sheets (sheet <code>AkunMurid</code> &amp; <code>AkunGTK</code>).</p>
+          <div style="display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; align-items:center;">
+            <button type="button" class="btn secondary small" id="tab-akun-murid">👩‍🎓 Murid</button>
+            <button type="button" class="btn secondary small" id="tab-akun-gtk">👨‍🏫 GTK</button>
+            <span style="flex:1;"></span>
+            <button type="button" class="btn small" id="btn-akun-tambah">＋ Tambah Akun</button>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+            <input type="text" id="akun-cari" placeholder="🔍 Cari nama atau NIS…" style="flex:1; min-width:180px; padding:8px 10px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+            <select id="akun-kelas" style="padding:8px 10px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+              <option value="">Semua Kelas</option>
+              <option value="3">Kelas III (Tiga)</option>
+              <option value="4">Kelas IV (Empat)</option>
+              <option value="5">Kelas V (Lima)</option>
+              <option value="6">Kelas VI (Enam)</option>
+            </select>
+          </div>
+          <div id="akun-form" style="display:none; border:1px solid #bae6fd; border-radius:12px; padding:14px; background:#f0f9ff; margin-bottom:14px;">
+            <b id="akun-form-title">Tambah Akun</b>
+            <div class="row">
+              <div id="akun-f-nis-wrap">
+                <label>NIS (Nomor Induk Siswa) <span class="req">*</span></label>
+                <input type="text" id="akun-f-nis" maxlength="20" placeholder="cth: 3300">
+              </div>
+              <div>
+                <label>Nama Lengkap <span class="req">*</span></label>
+                <input type="text" id="akun-f-nama" maxlength="80" placeholder="Nama sesuai absen">
+              </div>
+            </div>
+            <div class="row">
+              <div id="akun-f-kelas-wrap">
+                <label>Kelas <span class="req">*</span></label>
+                <select id="akun-f-kelas">
+                  <option value="3">Kelas III (Tiga)</option>
+                  <option value="4">Kelas IV (Empat)</option>
+                  <option value="5">Kelas V (Lima)</option>
+                  <option value="6">Kelas VI (Enam)</option>
+                </select>
+              </div>
+              <div id="akun-f-pass-wrap" style="display:none;">
+                <label>Kata Sandi <span class="req">*</span> <span class="muted">(min. 4 karakter)</span></label>
+                <input type="text" id="akun-f-pass" maxlength="80" placeholder="Kata sandi akun GTK">
+              </div>
+            </div>
+            <div class="hint" id="akun-f-hint">Kata sandi murid otomatis = NIS.</div>
+            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn small" id="btn-akun-simpan">💾 Simpan</button>
+              <button type="button" class="btn secondary small" id="btn-akun-batal">Batal</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="rekap">
+              <thead><tr id="akun-thead-row"></tr></thead>
+              <tbody id="tbody-akun"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="q">
           <h3>Riwayat Log Aktivitas</h3>
           <div style="overflow-x:auto;">
