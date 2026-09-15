@@ -92,6 +92,22 @@
   .chat-act-btn:hover { opacity: 1; background: rgba(0,0,0,.08); }
   .chat-msg.me .chat-act-btn:hover { background: rgba(255,255,255,.2); }
   .chat-text { white-space: pre-wrap; }
+
+  /* Chat tabs */
+  .chat-tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .chat-tab { flex: 1; padding: 12px; border: none; background: none; font: inherit; font-weight: 600; font-size: .88rem; color: var(--muted); cursor: pointer; transition: color .15s, border-color .15s; border-bottom: 2px solid transparent; }
+  .chat-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .chat-tab:hover { color: var(--primary-2); }
+
+  /* Contact list */
+  .chat-contact { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .12s; }
+  .chat-contact:hover { background: #f1f5f9; }
+  .chat-contact:active { background: #e0f2fe; }
+  .chat-contact-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; background: #fef3c7; color: #92400e; }
+  .chat-contact-info { flex: 1; min-width: 0; }
+  .chat-contact-name { font-weight: 600; font-size: .88rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-contact-meta { font-size: .75rem; color: var(--muted); margin-top: 1px; }
+  .chat-contact-badge { font-size: .7rem; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; font-weight: 600; flex-shrink: 0; }
   .chat-msg.system { align-self: center; background: transparent; color: var(--muted); font-size: .78rem; font-style: italic; max-width: 90%; text-align: center; padding: 4px 10px; }
   .chat-input-bar { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--card); }
   .chat-input-bar input { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 999px; font: inherit; font-size: .9rem; }
@@ -584,13 +600,21 @@
   <!-- ================= HALAMAN: CHAT ================= -->
   <section id="page-chat" class="page">
     <div class="card" style="padding:0; overflow:hidden;">
-      <!-- Admin: daftar percakapan -->
+      <!-- Tab header -->
+      <div class="chat-tabs">
+        <button type="button" class="chat-tab active" id="chat-tab-conv">💬 Percakapan</button>
+        <button type="button" class="chat-tab" id="chat-tab-contacts">👤 Kontak</button>
+      </div>
+      <!-- Daftar percakapan -->
       <div id="chat-list-view">
-        <div style="padding:18px 22px 12px; border-bottom:1px solid var(--line);">
-          <h2 style="margin:0;">💬 Chat</h2>
-          <p class="muted" style="margin:4px 0 0;">Percakapan dengan admin dan pengguna lain.</p>
-        </div>
         <div id="chat-list" style="max-height:60vh; overflow-y:auto;"></div>
+      </div>
+      <!-- Daftar kontak (admin) -->
+      <div id="chat-contacts-view" style="display:none;">
+        <div style="padding:12px 18px; border-bottom:1px solid var(--line);">
+          <input type="text" id="chat-contact-search" placeholder="🔍 Cari nama murid…" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+        </div>
+        <div id="chat-contacts-list" style="max-height:60vh; overflow-y:auto;"></div>
       </div>
       <!-- Percakapan (tersembunyi default) -->
       <div id="chat-room-view" style="display:none;">

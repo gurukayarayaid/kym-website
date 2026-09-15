@@ -2104,17 +2104,69 @@
   function initChat() {
     var ses = chatSession();
     var chatView = $('chat-list-view');
+    var contactsView = $('chat-contacts-view');
     var roomView = $('chat-room-view');
     if (!chatView || !roomView) return;
     if (ses) {
       chatView.style.display = '';
+      if (contactsView) contactsView.style.display = 'none';
       roomView.style.display = 'none';
       renderChatList();
+      if (ses.role === 'admin') renderChatContacts();
+      updateChatTabs(ses);
     } else {
       chatView.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><p>Login untuk menggunakan chat.</p></div>';
+      if (contactsView) contactsView.style.display = 'none';
       roomView.style.display = 'none';
     }
     updateChatBadge();
+  }
+
+  /* --- Show/hide contacts tab for admin --- */
+  function updateChatTabs(ses) {
+    var contactsBtn = $('chat-tab-contacts');
+    if (contactsBtn) contactsBtn.style.display = (ses && ses.role === 'admin') ? '' : 'none';
+  }
+
+  /* --- Render contacts from SISWA --- */
+  function renderChatContacts(filter) {
+    var list = $('chat-contacts-list');
+    if (!list) return;
+    var ses = chatSession();
+    var uid = chatUserId(ses);
+    var keyword = (filter || '').toLowerCase();
+    var html = '';
+    var kelasNama = { '3': 'Kelas III', '4': 'Kelas IV', '5': 'Kelas V', '6': 'Kelas VI' };
+    SISWA.forEach(function (s) {
+      var nis = s[0], nama = s[1], kelas = s[2];
+      if (keyword && nama.toLowerCase().indexOf(keyword) === -1 && nis.indexOf(keyword) === -1) return;
+      var chatKey = getChatKey(uid, nis);
+      var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
+      var lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
+      var preview = lastMsg ? (lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : 'Belum ada pesan';
+      html += '<div class="chat-contact" data-nis="' + nis + '" data-nama="' + esc(nama) + '" data-kelas="' + kelas + '">'
+        + '<div class="chat-contact-avatar">👩‍🎓</div>'
+        + '<div class="chat-contact-info">'
+        + '<div class="chat-contact-name">' + esc(nama) + '</div>'
+        + '<div class="chat-contact-meta">' + (kelasNama[kelas] || 'Kelas ' + kelas) + ' · NIS ' + nis + '</div>'
+        + '</div>'
+        + '<div class="chat-contact-badge">' + (lastMsg ? '💬' : '✉️') + '</div>'
+        + '</div>';
+    });
+    if (!html) {
+      list.innerHTML = '<div class="chat-empty"><p>Tidak ditemukan.</p></div>';
+      return;
+    }
+    list.innerHTML = html;
+    list.querySelectorAll('.chat-contact').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var nis = el.getAttribute('data-nis');
+        var nama = el.getAttribute('data-nama');
+        var kelas = el.getAttribute('data-kelas');
+        var chatKey = getChatKey(uid, nis);
+        openChatRoom(chatKey, nis, nama, 'murid');
+      });
+    });
   }
 
   /* --- Auto-create chat room for murid/GTK with admin --- */
@@ -2141,6 +2193,10 @@
     var chatForm = $('chat-form');
     var chatInput = $('chat-input');
     var chatBack = $('chat-back');
+    var tabConv = $('chat-tab-conv');
+    var tabContacts = $('chat-tab-contacts');
+    var contactSearch = $('chat-contact-search');
+
     if (chatForm) {
       chatForm.addEventListener('submit', function (e) {
         e.preventDefault();
@@ -2153,9 +2209,36 @@
     }
     if (chatBack) {
       chatBack.addEventListener('click', function () {
-        $('chat-list-view').style.display = '';
         $('chat-room-view').style.display = 'none';
+        var ses = chatSession();
+        if (tabConv && tabConv.classList.contains('active')) {
+          $('chat-list-view').style.display = '';
+        } else {
+          $('chat-contacts-view').style.display = '';
+        }
+      });
+    }
+    if (tabConv) {
+      tabConv.addEventListener('click', function () {
+        tabConv.classList.add('active');
+        if (tabContacts) tabContacts.classList.remove('active');
+        $('chat-list-view').style.display = '';
+        $('chat-contacts-view').style.display = 'none';
         renderChatList();
+      });
+    }
+    if (tabContacts) {
+      tabContacts.addEventListener('click', function () {
+        tabContacts.classList.add('active');
+        tabConv.classList.remove('active');
+        $('chat-list-view').style.display = 'none';
+        $('chat-contacts-view').style.display = '';
+        renderChatContacts();
+      });
+    }
+    if (contactSearch) {
+      contactSearch.addEventListener('input', function () {
+        renderChatContacts(contactSearch.value);
       });
     }
   })();
