@@ -112,12 +112,35 @@
   .chat-contact-badge { font-size: .7rem; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; font-weight: 600; flex-shrink: 0; }
   .chat-contact-unread { display: inline-block; background: var(--primary); color: #fff; font-size: .7rem; font-weight: 700; min-width: 20px; height: 20px; line-height: 20px; text-align: center; border-radius: 999px; padding: 0 6px; flex-shrink: 0; }
   .chat-msg.system { align-self: center; background: transparent; color: var(--muted); font-size: .78rem; font-style: italic; max-width: 90%; text-align: center; padding: 4px 10px; }
-  .chat-input-bar { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--card); }
+  .chat-input-bar { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--card); align-items: center; }
   .chat-input-bar input { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 999px; font: inherit; font-size: .9rem; }
   .chat-input-bar input:focus { outline: 2px solid var(--primary); border-color: var(--primary); }
   .chat-send { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--primary); color: #fff; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: filter .15s; flex-shrink: 0; }
   .chat-send:hover { filter: brightness(1.1); }
   .chat-send:active { transform: scale(.93); }
+  /* Tombol lampiran file */
+  .chat-attach-btn { width: 38px; height: 38px; border-radius: 50%; border: none; background: #f1f5f9; color: var(--muted); font-size: 1.15rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s; flex-shrink: 0; }
+  .chat-attach-btn:hover { background: #e2e8f0; color: var(--primary); }
+  .chat-attach-btn:active { transform: scale(.92); }
+  /* Preview file sebelum kirim */
+  .chat-file-preview { display: flex; align-items: center; gap: 10px; padding: 8px 14px 0 14px; background: var(--card); }
+  .chat-file-preview-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
+  .chat-file-preview-doc { width: 52px; height: 52px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; flex-shrink: 0; }
+  .chat-file-preview-info { flex: 1; min-width: 0; }
+  .chat-file-preview-name { font-size: .8rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-file-preview-size { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+  .chat-file-preview-del { background: none; border: none; color: var(--danger); font-size: 1.1rem; cursor: pointer; padding: 4px; border-radius: 50%; flex-shrink: 0; }
+  .chat-file-preview-del:hover { background: #fee2e2; }
+  /* Gambar dalam bubble */
+  .chat-msg-image { max-width: 220px; max-height: 200px; border-radius: 10px; display: block; object-fit: cover; margin-bottom: 4px; cursor: pointer; transition: opacity .15s; }
+  .chat-msg-image:hover { opacity: .9; }
+  /* Dokumen dalam bubble */
+  .chat-msg-file { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,.07); border-radius: 8px; padding: 8px 10px; margin-bottom: 4px; max-width: 220px; text-decoration: none; }
+  .chat-msg.me .chat-msg-file { background: rgba(255,255,255,.2); }
+  .chat-msg-file-icon { font-size: 1.4rem; flex-shrink: 0; }
+  .chat-msg-file-info { flex: 1; min-width: 0; }
+  .chat-msg-file-name { font-size: .78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: inherit; }
+  .chat-msg-file-size { font-size: .68rem; opacity: .75; }
 
   /* Chat list (admin view) */
   .chat-list-item { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .12s; }
@@ -676,8 +699,19 @@
           </div>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
+        <!-- Area preview file sebelum dikirim -->
+        <div class="chat-file-preview" id="chat-file-preview" style="display:none;">
+          <div id="chat-file-preview-thumb-wrap"></div>
+          <div class="chat-file-preview-info">
+            <div class="chat-file-preview-name" id="chat-file-preview-name"></div>
+            <div class="chat-file-preview-size" id="chat-file-preview-size"></div>
+          </div>
+          <button type="button" class="chat-file-preview-del" id="btn-chat-file-clear" title="Batal lampiran">✕</button>
+        </div>
         <form class="chat-input-bar" id="chat-form" autocomplete="off">
-          <input type="text" id="chat-input" placeholder="Tulis pesan…" maxlength="1000" required>
+          <input type="file" id="chat-file-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" style="display:none">
+          <button type="button" class="chat-attach-btn" id="btn-chat-attach" title="Lampirkan gambar atau dokumen">📎</button>
+          <input type="text" id="chat-input" placeholder="Tulis pesan…" maxlength="1000">
           <button type="submit" class="chat-send" aria-label="Kirim">➤</button>
         </form>
       </div>
