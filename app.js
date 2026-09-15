@@ -15,6 +15,8 @@
   var LS_DEVICE = 'kym_device_id_v1';
   var LS_SESSION = 'kym_user_session_v1';
   var LS_GURU = 'kym_guru_accounts_v1';
+  var LS_CHAT = 'kym_chat_v1';
+  var LS_CHAT_OUTBOX = 'kym_chat_outbox_v1';
   var IDB_NAME = 'kym-filedb';
   var IDB_STORE = 'handles';
 
@@ -66,11 +68,13 @@
 
   function buildDbObject() {
     return {
-      app: 'KYM', format: 1,
+      app: 'KYM', format: 2,
       savedAt: new Date().toISOString(),
       poems: loadPoems(),
       log: loadLog(),
-      adminPass: getPass()
+      adminPass: getPass(),
+      chats: loadChat(),
+      guru: loadGuru()
     };
   }
   function serializeDb(obj) { return JSON.stringify(obj, null, 2); }
@@ -133,6 +137,8 @@
   function applyDbObject(data, merge) {
     var remotePoems = Array.isArray(data.poems) ? data.poems : [];
     var remoteLog = Array.isArray(data.log) ? data.log : [];
+    var remoteChats = Array.isArray(data.chats) ? data.chats : [];
+    var remoteGuru = Array.isArray(data.guru) ? data.guru : [];
     var poems, log;
     if (merge) {
       poems = loadPoems();
@@ -159,6 +165,17 @@
       if (typeof data.adminPass === 'string' && data.adminPass && data.adminPass !== DEFAULT_PASS && getPass() === DEFAULT_PASS) {
         localStorage.setItem(LS_PASS, data.adminPass);
       }
+      // merge chats
+      if (remoteChats.length) mergeChatFromRemote(remoteChats);
+      if (remoteGuru.length) {
+        var curG = loadGuru();
+        var gMap = {};
+        curG.forEach(function (g) { gMap[g.nama.toLowerCase()] = g; });
+        remoteGuru.forEach(function (rg) {
+          if (!gMap[rg.nama.toLowerCase()]) curG.push(rg);
+        });
+        saveGuru(curG);
+      }
       return { added: added, updated: updated, logAdded: log.length - loadLog().length, total: poems.length, poems: poems, log: log };
     }
     poems = remotePoems;
@@ -166,6 +183,8 @@
     if (typeof data.adminPass === 'string' && data.adminPass) {
       localStorage.setItem(LS_PASS, data.adminPass);
     }
+    if (Array.isArray(data.chats)) saveChat(data.chats);
+    if (Array.isArray(data.guru)) saveGuru(data.guru);
     return { added: poems.length, updated: 0, logAdded: log.length, total: poems.length, poems: poems, log: log };
   }
 
@@ -174,6 +193,7 @@
     savePoems(r.poems);
     localStorage.setItem(LS_LOG, JSON.stringify(r.log));
     renderAdmin();
+    updateChatBadge();
     setDbStatus('♻️ Pulihkan (' + sourceLabel + '): ' + r.total + ' karya' + (merge ? ' · ' + r.added + ' baru · ' + r.updated + ' diperbarui' : '') + '.', true);
     toast('Database dipulihkan: ' + r.total + ' karya.');
     saveDbToFile();
@@ -448,19 +468,102 @@
     });
   }
 
+  /* ---------- Chat GAS sync (cross-device real-time) ---------- */
+  function loadChatOutbox() {
+    try { return JSON.parse(localStorage.getItem(LS_CHAT_OUTBOX)) || []; } catch (e) { return []; }
+  }
+  function saveChatOutbox(a) { localStorage.setItem(LS_CHAT_OUTBOX, JSON.stringify(a)); }
+  function enqueueChat(action, chat) {
+    var q = loadChatOutbox();
+    q.push({ action: action, chat: chat, ts: Date.now() });
+    saveChatOutbox(q);
+  }
+  function mergeChatFromRemote(remoteChats) {
+    if (!Array.isArray(remoteChats) || !remoteChats.length) return 0;
+    var local = loadChat();
+    var map = {};
+    local.forEach(function (m) { map[m.id] = m; });
+    var added = 0, updated = 0;
+    remoteChats.forEach(function (rm) {
+      var lm = map[rm.id];
+      if (!lm) { local.push(rm); added++; }
+      else {
+        // remote wins if has newer edit/read/deleted state
+        var need = false;
+        if (rm.edited && !lm.edited) need = true;
+        if (rm.deleted && !lm.deleted) need = true;
+        if (rm.read && !lm.read) need = true;
+        if (rm.text !== lm.text) need = true;
+        if (need) { var idx = local.indexOf(lm); local[idx] = rm; updated++; }
+      }
+    });
+    if (added || updated) saveChat(local);
+    // bersihkan outbox yang sudah ada di remote
+    var remoteIds = {};
+    remoteChats.forEach(function (c) { remoteIds[c.id] = 1; });
+    var out = loadChatOutbox().filter(function (o) { return !remoteIds[o.chat.id]; });
+    if (out.length !== loadChatOutbox().length) saveChatOutbox(out);
+    return added + updated;
+  }
+  function gasChatPull() {
+    if (!gasActive() || !online()) return Promise.resolve(0);
+    return gasApi({ action: 'chat_list' }).then(function (res) {
+      var n = mergeChatFromRemote(res.chats || []);
+      if (n) {
+        renderChatListIfVisible();
+        refreshChatRoomIfOpen();
+        updateChatBadge();
+      }
+      return n;
+    }).catch(function () { return 0; });
+  }
+  function gasChatPushAll() {
+    if (!gasActive() || !online()) return Promise.resolve(0);
+    var list = loadChat();
+    if (!list.length) return Promise.resolve(0);
+    return gasApi({ action: 'chat_bulk', chats: list }).then(function () {
+      saveChatOutbox([]);
+      return list.length;
+    }).catch(function () { return 0; });
+  }
+  function flushChatOutbox() {
+    var q = loadChatOutbox();
+    if (!q.length || !gasActive() || !online()) return Promise.resolve(0);
+    var next = q[0];
+    var payload = next.action === 'chat_create' ? { action: 'chat_create', chat: next.chat }
+                : next.action === 'chat_update' ? { action: 'chat_update', chat: next.chat }
+                : { action: 'chat_delete', chat: next.chat };
+    return gasApi(payload).then(function () {
+      q.shift();
+      saveChatOutbox(q);
+      return flushChatOutbox().then(function (n) { return n + 1; });
+    }).catch(function () { return 0; });
+  }
+  function syncChatMessage(action, chat) {
+    if (!gasActive()) return;
+    var payload = action === 'create' ? { action: 'chat_create', chat: chat }
+                : action === 'update' ? { action: 'chat_update', chat: chat }
+                : { action: 'chat_delete', chat: chat };
+    if (!online()) { enqueueChat(payload.action, chat); return; }
+    gasApi(payload).catch(function (e) {
+      if (e.message !== 'offline') enqueueChat(payload.action, chat);
+    });
+  }
+
   var APPS_SCRIPT_CODE = [
-    '/** KYM \u2014 Penerima karya puisi ke Google Spreadsheet **/',
+    '/** KYM \u2014 Penerima karya puisi & chat ke Google Spreadsheet **/',
     'var HEADER = ["code","nama","jenjang","kelas","sekolah","tahap","judul","isi","profil","time","updatedAt","device"];',
+    'var HEADER_CHAT = ["id","chatKey","senderId","senderName","senderRole","text","ts","read","edited","deleted"];',
     '',
     'function doPost(e) {',
     '  var out = { ok: true };',
     '  try {',
     '    var body = JSON.parse(e.postData.contents);',
     '    var ss = SpreadsheetApp.getActiveSpreadsheet();',
+    '    // --- Puisi sheet ---',
     '    var sh = ss.getSheetByName("Puisi") || ss.insertSheet("Puisi");',
     '    fixHeader(sh);',
     '    var p = body.poem || {};',
-    '    function f(k) { return p[k] === undefined ? "" : p[k]; }',
     '    if (body.action === "create" || body.action === "update" || body.action === "bulk") {',
     '      var items = body.action === "bulk" ? (body.poems || []) : [p];',
     '      items.forEach(function (x) {',
@@ -485,6 +588,29 @@
     '        return { code: String(v[0]), nama: v[1], jenjang: v[2], kelas: v[3], wa: "", sekolah: v[4], tahap: String(v[5]), judul: v[6], isi: v[7], profil: v[8], time: String(v[9]), updatedAt: v[10] ? String(v[10]) : null, device: String(v[11] || "") };',
     '      });',
     '    }',
+    '    // --- Chat sheet ---',
+    '    var shChat = ss.getSheetByName("Chat") || ss.insertSheet("Chat");',
+    '    fixChatHeader(shChat);',
+    '    if (body.action === "chat_create" || body.action === "chat_update" || body.action === "chat_bulk") {',
+    '      var cItems = body.action === "chat_bulk" ? (body.chats || []) : [body.chat || {}];',
+    '      cItems.forEach(function (c) {',
+    '        if (!c.id) return;',
+    '        var crow = [c.id, c.chatKey, c.senderId, c.senderName, c.senderRole, c.text, c.ts, c.read ? "1" : "", c.edited ? "1" : "", c.deleted ? "1" : ""];',
+    '        var erow = findChatRow(shChat, c.id);',
+    '        if (erow === -1) shChat.appendRow(crow);',
+    '        else shChat.getRange(erow, 1, 1, 10).setValues([crow]);',
+    '      });',
+    '      out.chatCount = cItems.length;',
+    '    } else if (body.action === "chat_delete") {',
+    '      var cr = findChatRow(shChat, (body.chat||{}).id);',
+    '      if (cr !== -1) shChat.deleteRow(cr);',
+    '    } else if (body.action === "chat_list") {',
+    '      var cVals = shChat.getDataRange().getValues();',
+    '      if (cVals.length) { cVals.shift(); }',
+    '      out.chats = cVals.filter(function(v){return String(v[0]).trim()!=="";}).map(function (v) {',
+    '        return { id: String(v[0]), chatKey: String(v[1]), senderId: String(v[2]), senderName: String(v[3]), senderRole: String(v[4]), text: String(v[5]), ts: Number(v[6]), read: String(v[7])==="1", edited: String(v[8])==="1", deleted: String(v[9])==="1" };',
+    '      });',
+    '    }',
     '  } catch (err) { out = { ok: false, error: String(err) }; }',
     '  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);',
     '}',
@@ -500,10 +626,25 @@
     '    if (sh.getLastColumn() > 12) sh.getRange(1, 13, 1, sh.getLastColumn() - 12).clearContent();',
     '  }',
     '}',
+    'function fixChatHeader(sh) {',
+    '  if (sh.getLastRow() === 0) { sh.appendRow(HEADER_CHAT); sh.setFrozenRows(1); return; }',
+    '  var w2 = Math.max(sh.getLastColumn(), 10);',
+    '  var hr2 = sh.getRange(1, 1, 1, w2).getValues()[0];',
+    '  var sama2 = HEADER_CHAT.every(function (h, i) { return String(hr2[i]) === h; });',
+    '  if (!sama2) {',
+    '    sh.getRange(1, 1, 1, 10).setValues([HEADER_CHAT]);',
+    '    if (sh.getLastColumn() > 10) sh.getRange(1, 11, 1, sh.getLastColumn()-10).clearContent();',
+    '  }',
+    '}',
     '',
     'function findRow(sh, code) {',
     '  var values = sh.getDataRange().getValues();',
     '  for (var i = 0; i < values.length; i++) if (String(values[i][0]) === String(code)) return i + 1;',
+    '  return -1;',
+    '}',
+    'function findChatRow(sh, id) {',
+    '  var values = sh.getDataRange().getValues();',
+    '  for (var i = 0; i < values.length; i++) if (String(values[i][0]) === String(id)) return i + 1;',
     '  return -1;',
     '}'
   ].join('\n');
@@ -1849,9 +1990,9 @@
   /* ============================================================
      CHAT MODULE — admin ↔ murid, admin ↔ guru only
      ============================================================ */
-  var LS_CHAT = 'kym_chat_v1';
   var chatPollTimer = null;
   var _chatLastCount = 0;
+  var _chatGasPullTimer = null;
   /* --- Session helpers --- */
   function chatSession() {
     var ses = getSession();
@@ -1891,7 +2032,23 @@
 
   /* --- Only allow chat involving admin --- */
   function isAllowedChat(key) {
-    return key.indexOf('admin') !== -1;
+    if (!key || key.indexOf('admin') === -1) return false;
+    var parts = key.split('_');
+    return parts.indexOf('admin') !== -1;
+  }
+  function lookupNameById(uid) {
+    if (uid === 'admin') return 'Admin KYM';
+    var s = SISWA.filter(function (x) { return x[0] === uid; })[0];
+    if (s) return s[1];
+    var g = loadGuru().filter(function (x) { return x.nama === uid; })[0];
+    if (g) return g.nama;
+    return uid;
+  }
+  function lookupRoleById(uid) {
+    if (uid === 'admin') return 'admin';
+    if (SISWA.some(function (x) { return x[0] === uid; })) return 'murid';
+    if (loadGuru().some(function (x) { return x.nama === uid; })) return 'guru';
+    return 'murid';
   }
 
   /* --- Conversation list --- */
@@ -1902,17 +2059,39 @@
     var msgs = loadChat();
     var convos = {};
     msgs.forEach(function (m) {
-      if (m.deleted) return;
+      if (m.deleted && !m.read) { /* keep deleted for unread? skip */ }
+      if (m.deleted) {
+        // still need key for unread? skip deleted messages for convo building
+        // but keep lastMsg as previous non-deleted
+        var kDel = m.chatKey;
+        if (!convos[kDel]) convos[kDel] = { key: kDel, users: {}, lastMsg: null, unread: {} };
+        // ensure participants from chatKey are present even if deleted
+        kDel.split('_').forEach(function (pid) {
+          if (!convos[kDel].users[pid]) convos[kDel].users[pid] = { id: pid, name: lookupNameById(pid), role: lookupRoleById(pid) };
+        });
+        return;
+      }
       if (!isAllowedChat(m.chatKey)) return;
       var key = m.chatKey;
       if (!convos[key]) convos[key] = { key: key, users: {}, lastMsg: null, unread: {} };
       convos[key].users[m.senderId] = { id: m.senderId, name: m.senderName, role: m.senderRole };
+      // ensure both participants from chatKey are in users map
+      key.split('_').forEach(function (pid) {
+        if (!convos[key].users[pid]) convos[key].users[pid] = { id: pid, name: lookupNameById(pid), role: lookupRoleById(pid) };
+      });
       if (!convos[key].lastMsg || m.ts > convos[key].lastMsg.ts) convos[key].lastMsg = m;
       if (m.senderId !== uid && !m.read) {
         convos[key].unread[uid] = (convos[key].unread[uid] || 0) + 1;
       }
     });
-    var arr = Object.values(convos);
+    // also ensure lastMsg is correctly set (for keys that only had deleted msgs, find last non-deleted)
+    Object.keys(convos).forEach(function (k) {
+      if (!convos[k].lastMsg) {
+        var last = msgs.filter(function (m) { return m.chatKey === k && !m.deleted; }).sort(function (a,b){return b.ts-a.ts;})[0];
+        if (last) convos[k].lastMsg = last;
+      }
+    });
+    var arr = Object.values(convos).filter(function (c) { return !!c.lastMsg; });
     arr.sort(function (a, b) { return (b.lastMsg ? b.lastMsg.ts : 0) - (a.lastMsg ? a.lastMsg.ts : 0); });
     return arr;
   }
@@ -2058,11 +2237,15 @@
     var msgs = loadChat();
     var msg = msgs.find(function (m) { return m.id === msgId; });
     if (!msg) return;
+    var ses = chatSession();
+    if (msg.senderId !== chatUserId(ses)) { toast('Hanya pengirim yang bisa edit pesan.'); return; }
     var newText = prompt('Edit pesan:', msg.text);
     if (newText === null || !newText.trim()) return;
+    if (newText.trim() === msg.text) return;
     msg.text = newText.trim();
     msg.edited = true;
     saveChat(msgs);
+    syncChatMessage('update', msg);
     renderChatMessages(msg.chatKey);
     toast('Pesan diedit.');
   }
@@ -2073,8 +2256,11 @@
     var msgs = loadChat();
     var msg = msgs.find(function (m) { return m.id === msgId; });
     if (!msg) return;
+    var ses = chatSession();
+    if (msg.senderId !== chatUserId(ses)) { toast('Hanya pengirim yang bisa hapus pesan.'); return; }
     msg.deleted = true;
     saveChat(msgs);
+    syncChatMessage('delete', msg);
     renderChatMessages(msg.chatKey);
     toast('Pesan dihapus.');
   }
@@ -2086,13 +2272,18 @@
     if (!uid) return;
     var msgs = loadChat();
     var changed = false;
+    var changedMsgs = [];
     msgs.forEach(function (m) {
       if (m.chatKey === chatKey && m.senderId !== uid && !m.read) {
         m.read = true;
         changed = true;
+        changedMsgs.push(m);
       }
     });
-    if (changed) saveChat(msgs);
+    if (changed) {
+      saveChat(msgs);
+      changedMsgs.forEach(function (m) { syncChatMessage('update', m); });
+    }
     updateChatBadge();
   }
 
@@ -2100,10 +2291,21 @@
   function sendChatMessage(text) {
     var ses = chatSession();
     var uid = chatUserId(ses);
-    if (!uid || !text.trim()) return;
+    if (!uid || !text.trim()) { toast('Pesan kosong.'); return; }
     var container = $('chat-messages');
     var chatKey = container ? container.getAttribute('data-chat') : '';
-    if (!chatKey || !isAllowedChat(chatKey)) return;
+    // fallback: jika room belum punya chatKey, buat otomatis (murid/GTK -> admin)
+    if (!chatKey) {
+      if (!isAdmin(ses)) {
+        chatKey = getChatKey(uid, 'admin');
+        var c2 = $('chat-messages');
+        if (c2) c2.setAttribute('data-chat', chatKey);
+      } else {
+        toast('Pilih kontak terlebih dahulu.');
+        return;
+      }
+    }
+    if (!isAllowedChat(chatKey)) { toast('Chat hanya tersedia dengan admin.'); return; }
     var msg = {
       id: chatId(),
       chatKey: chatKey,
@@ -2119,9 +2321,24 @@
     var msgs = loadChat();
     msgs.push(msg);
     saveChat(msgs);
+    syncChatMessage('create', msg);
     _chatLastCount = msgs.length;
     renderChatMessages(chatKey);
+    renderChatListIfVisible();
     updateChatBadge();
+  }
+
+  /* --- Helpers for GAS sync --- */
+  function renderChatListIfVisible() {
+    var v = $('chat-list-view');
+    if (v && v.style.display !== 'none') renderChatList();
+  }
+  function refreshChatRoomIfOpen() {
+    var rv = $('chat-room-view');
+    if (!rv || rv.style.display === 'none') return;
+    var c = $('chat-messages');
+    var k = c ? c.getAttribute('data-chat') : '';
+    if (k) renderChatMessages(k);
   }
 
   /* --- Init chat page --- */
@@ -2135,10 +2352,33 @@
       chatView.style.display = '';
       if (contactsView) contactsView.style.display = 'none';
       roomView.style.display = 'none';
+      // auto-create welcome chat for murid/GTK
+      ensureAdminChat();
       renderChatList();
       updateChatTabs(ses);
       if (isAdmin(ses)) {
         renderChatContacts();
+      } else {
+        // murid/GTK: jika hanya 1 percakapan (dengan admin), auto-buka room
+        var convs = getConversations();
+        if (convs.length === 1) {
+          var c = convs[0];
+          var other = null;
+          Object.values(c.users).forEach(function (u) { if (u.id !== chatUserId(ses)) other = u; });
+          if (other) {
+            // jangan auto-buka jika kontak tab aktif
+            var tabC = $('chat-tab-contacts');
+            if (!tabC || !tabC.classList.contains('active')) {
+              // tunda sedikit agar render list selesai
+              setTimeout(function () { openChatRoom(c.key, other.id, other.name, other.role); }, 50);
+            }
+          }
+        }
+      }
+      // pull dari GAS jika online
+      if (gasActive() && online()) {
+        gasChatPull();
+        flushChatOutbox();
       }
     } else {
       chatView.innerHTML = '<div class="chat-empty"><div class="chat-empty-icon">💬</div><p>Login untuk menggunakan chat.</p></div>';
@@ -2161,25 +2401,27 @@
     if (!list) return;
     var ses = chatSession();
     var uid = chatUserId(ses);
+    if (!uid) return;
     var keyword = (filter || '').toLowerCase();
     var kelasNama = { '3': 'Kelas III', '4': 'Kelas IV', '5': 'Kelas V', '6': 'Kelas VI' };
+    var allMsgs = loadChat();
     var html = '';
 
-    /* Murid contacts */
+    /* Murid contacts — single pass */
     SISWA.forEach(function (s) {
       var nis = s[0], nama = s[1], kelas = s[2];
       if (keyword && nama.toLowerCase().indexOf(keyword) === -1 && nis.indexOf(keyword) === -1) return;
       var chatKey = getChatKey(uid, nis);
-      var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
+      var msgs = allMsgs.filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
       var lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
-      var preview = lastMsg ? (lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : 'Belum ada pesan';
       var unread = 0;
-      msgs.forEach(function (m) { if (m.senderId !== uid && !m.read) unread++; });
+      for (var i = 0; i < msgs.length; i++) if (msgs[i].senderId !== uid && !msgs[i].read) unread++;
+      var preview = lastMsg ? esc(lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : '';
       html += '<div class="chat-contact" data-nis="' + nis + '" data-nama="' + esc(nama) + '" data-role="murid">'
         + '<div class="chat-contact-avatar">👩‍🎓</div>'
         + '<div class="chat-contact-info">'
         + '<div class="chat-contact-name">' + esc(nama) + '</div>'
-        + '<div class="chat-contact-meta">' + (kelasNama[kelas] || 'Kelas ' + kelas) + ' · NIS ' + nis + '</div>'
+        + '<div class="chat-contact-meta">' + (kelasNama[kelas] || 'Kelas ' + kelas) + ' · NIS ' + nis + (preview ? ' · ' + preview : '') + '</div>'
         + '</div>'
         + (unread ? '<div class="chat-contact-unread">' + unread + '</div>' : '<div class="chat-contact-badge">' + (lastMsg ? '💬' : '✉️') + '</div>')
         + '</div>';
@@ -2191,16 +2433,16 @@
       var nama = g.nama;
       if (keyword && nama.toLowerCase().indexOf(keyword) === -1) return;
       var chatKey = getChatKey(uid, nama);
-      var msgs = loadChat().filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
+      var msgs = allMsgs.filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
       var lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
-      var preview = lastMsg ? (lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : 'Belum ada pesan';
       var unread = 0;
-      msgs.forEach(function (m) { if (m.senderId !== uid && !m.read) unread++; });
+      for (var i = 0; i < msgs.length; i++) if (msgs[i].senderId !== uid && !msgs[i].read) unread++;
+      var preview = lastMsg ? esc(lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : '';
       html += '<div class="chat-contact" data-nis="' + esc(nama) + '" data-nama="' + esc(nama) + '" data-role="guru">'
         + '<div class="chat-contact-avatar" style="background:#d1fae5;color:#065f46;">👨‍🏫</div>'
         + '<div class="chat-contact-info">'
         + '<div class="chat-contact-name">' + esc(nama) + '</div>'
-        + '<div class="chat-contact-meta">Guru/Tendik (GTK)</div>'
+        + '<div class="chat-contact-meta">Guru/Tendik (GTK)' + (preview ? ' · ' + preview : '') + '</div>'
         + '</div>'
         + (unread ? '<div class="chat-contact-unread">' + unread + '</div>' : '<div class="chat-contact-badge">' + (lastMsg ? '💬' : '✉️') + '</div>')
         + '</div>';
@@ -2229,15 +2471,17 @@
     var uid = chatUserId(ses);
     var chatKey = getChatKey(uid, 'admin');
     var msgs = loadChat();
-    var exists = msgs.some(function (m) { return m.chatKey === chatKey; });
+    var exists = msgs.some(function (m) { return m.chatKey === chatKey && !m.deleted; });
     if (!exists) {
-      msgs.push({
+      var welcome = {
         id: chatId(), chatKey: chatKey,
         senderId: 'admin', senderName: 'Admin KYM', senderRole: 'admin',
-        text: 'Halo! Ada yang bisa kami bantu? 😊',
+        text: 'Halo ' + ses.nama + '! Ada yang bisa kami bantu? 😊',
         ts: Date.now(), read: false, edited: false, deleted: false
-      });
+      };
+      msgs.push(welcome);
       saveChat(msgs);
+      syncChatMessage('create', welcome);
     }
   }
 
@@ -2268,6 +2512,7 @@
           renderChatList();
         } else {
           $('chat-contacts-view').style.display = '';
+          renderChatContacts();
         }
       });
     }
@@ -2296,45 +2541,51 @@
     }
   })();
 
-  /* --- Real-time polling (2 seconds) --- */
+  /* --- Real-time polling (local 2s) + GAS pull (7s) --- */
   chatPollTimer = setInterval(function () {
     if (document.hidden) return;
     var pg = $('page-chat');
     if (!pg || !pg.classList.contains('active')) { updateChatBadge(); return; }
-
-    var newCount = loadChat().length;
+    var all = loadChat();
+    var newCount = all.length;
     var roomOpen = $('chat-room-view') && $('chat-room-view').style.display !== 'none';
-
-    /* Refresh messages if room is open and data changed */
     if (roomOpen) {
       var container = $('chat-messages');
       var chatKey = container ? container.getAttribute('data-chat') : '';
       if (chatKey) {
-        if (newCount !== _chatLastCount) {
+        // hash sederhana untuk deteksi edit/read: gabung id+edited+deleted+read
+        var sig = all.filter(function(m){return m.chatKey===chatKey;}).map(function(m){return m.id+(m.edited?'E':'')+(m.deleted?'D':'')+(m.read?'R':'');}).join('|');
+        if (sig !== chatPollTimer._lastSig) {
           renderChatMessages(chatKey);
+          chatPollTimer._lastSig = sig;
           _chatLastCount = newCount;
-        } else {
-          /* Even if count same, check for read/edited changes */
-          renderChatMessages(chatKey);
         }
       }
     }
-
-    /* Refresh conversation list */
     var listView = $('chat-list-view');
     if (listView && listView.style.display !== 'none') renderChatList();
-
-    /* Refresh contacts */
     var contactsView = $('chat-contacts-view');
-    if (contactsView && contactsView.style.display !== 'none') renderChatContacts();
-
+    if (contactsView && contactsView.style.display !== 'none') renderChatContacts($('chat-contact-search') ? $('chat-contact-search').value : '');
     updateChatBadge();
     _chatLastCount = newCount;
   }, 2000);
 
+  _chatGasPullTimer = setInterval(function () {
+    if (document.hidden) return;
+    if (!gasActive() || !online()) return;
+    gasChatPull().then(function (n) {
+      if (n) { flushChatOutbox(); }
+    });
+    flushChatOutbox();
+  }, 7000);
+
+  window.addEventListener('online', function () {
+    flushChatOutbox().then(function(){ gasChatPull(); });
+  });
+
   /* --- Cross-tab sync via storage event --- */
   window.addEventListener('storage', function (e) {
-    if (e.key !== LS_CHAT) return;
+    if (e.key !== LS_CHAT && e.key !== LS_CHAT_OUTBOX) return;
     updateChatBadge();
     var pg = $('page-chat');
     if (!pg || !pg.classList.contains('active')) return;
@@ -2344,8 +2595,9 @@
       var chatKey = container ? container.getAttribute('data-chat') : '';
       if (chatKey) renderChatMessages(chatKey);
     }
-    var listView = $('chat-list-view');
-    if (listView && listView.style.display !== 'none') renderChatList();
+    renderChatListIfVisible();
+    var cv = $('chat-contacts-view');
+    if (cv && cv.style.display !== 'none') renderChatContacts($('chat-contact-search') ? $('chat-contact-search').value : '');
   });
 
   updateChatBadge();
