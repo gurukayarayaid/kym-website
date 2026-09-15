@@ -189,6 +189,10 @@
   .poem-item h4 { color: var(--primary-2); font-size: 1.05rem; }
   .poem-item .meta { font-size: .82rem; color: var(--muted); margin: 4px 0 8px; }
   .poem-item pre { font-family: inherit; white-space: pre-wrap; line-height: 1.6; background: #fff; border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; max-height: 240px; overflow: auto; font-size: .92rem; }
+  /* Galeri: tampil penuh tanpa scroll vertikal saat segitiga judul diklik */
+  #galeri-list .poem-item { max-height: none; overflow: visible; }
+  #galeri-list .poem-item pre { max-height: none; overflow: visible; height: auto; }
+  #galeri-list details.poem-item[open] { height: auto; }
   .poem-item .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 
   table.rekap { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .88rem; }

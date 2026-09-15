@@ -1180,7 +1180,7 @@
       return '<details class="poem-item" style="margin-top:12px;">' +
         '<summary style="cursor:pointer; font-weight:700; color:var(--primary-2);">&ldquo;' + esc(p.judul) + '&rdquo;</summary>' +
         '<div class="meta" style="margin:6px 0 4px;">' + esc(p.nama) + ' · ' + esc(kelasRingkas(p.kelas)) + ' · SD Negeri Semambung · dikirim ' + fmtDT(p.time) + '</div>' +
-        '<pre style="margin-top:6px;">' + esc(p.isi) + '</pre>' +
+        '<pre style="margin-top:6px; max-height:none; overflow:visible; height:auto;">' + esc(p.isi) + '</pre>' +
         '</details>';
     }).join('');
   }
