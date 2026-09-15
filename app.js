@@ -735,9 +735,7 @@
       var s = SISWA.filter(function (x) { return x[0] === nis; })[0];
       if (!s) { toast('Data murid tidak ditemukan.'); return; }
       if ($('l-pass').value.trim() !== s[0]) { toast('Kata sandi salah. Kata sandi murid = NIS.'); return; }
-      console.log('[CHAT] LOGIN murid: setting session nis=' + s[0] + ' nama=' + s[1] + ' kelas=' + s[2]);
       setSession({ role: 'murid', nis: s[0], nama: s[1], kelasDigit: s[2] });
-      console.log('[CHAT] LOGIN murid: session after set =', JSON.stringify(getSession()));
       renderLoginUi(); fCounter();
     });
     $('form-login-guru').addEventListener('submit', function (e) {
@@ -1854,22 +1852,17 @@
   var LS_CHAT = 'kym_chat_v1';
   var chatPollTimer = null;
   var _chatLastCount = 0;
-  console.log('[CHAT] module loaded, LS_CHAT=', LS_CHAT);
-
   /* --- Session helpers --- */
   function chatSession() {
     var ses = getSession();
-    console.log('[CHAT] chatSession: raw session =', JSON.stringify(ses));
-    if (ses) { console.log('[CHAT] chatSession: using session, nama=', ses.nama, 'nis=', ses.nis, 'role=', ses.role); return ses; }
-    if (adminUnlocked()) { console.log('[CHAT] chatSession: using admin fallback'); return { role: 'admin', nama: 'Admin', id: 'admin' }; }
-    console.log('[CHAT] chatSession: no session');
+    if (ses) return ses;
+    if (adminUnlocked()) return { role: 'admin', nama: 'Admin', id: 'admin' };
     return null;
   }
   function chatUserId(ses) {
     if (!ses) return '';
     if (ses.id) return ses.id;
     var uid = ses.nis || ses.nama || 'admin';
-    console.log('[CHAT] chatUserId: ses.id=', ses.id, 'ses.nis=', ses.nis, 'ses.nama=', ses.nama, '=> uid=', uid);
     return uid;
   }
   function isAdmin(ses) { return ses && (ses.role === 'admin' || ses.id === 'admin'); }
@@ -1990,7 +1983,6 @@
 
   /* --- Open chat room --- */
   function openChatRoom(chatKey, otherId, otherName, otherRole) {
-    console.log('[CHAT] openRoom: chatKey=', chatKey, 'other=', otherName);
     if (!isAllowedChat(chatKey)) { toast('Chat hanya tersedia dengan admin.'); return; }
     $('chat-list-view').style.display = 'none';
     $('chat-contacts-view').style.display = 'none';
@@ -2010,10 +2002,9 @@
     var ses = chatSession();
     var uid = chatUserId(ses);
     var container = $('chat-messages');
-    if (!container) { console.log('[CHAT] renderMsg: container not found'); return; }
+    if (!container) return;
     var allMsgs = loadChat();
     var msgs = allMsgs.filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
-    console.log('[CHAT] renderMsg: chatKey=', chatKey, 'total=', allMsgs.length, 'filtered=', msgs.length);
     msgs.sort(function (a, b) { return a.ts - b.ts; });
     if (!msgs.length) {
       container.innerHTML = '<div class="chat-msg system">Mulai percakapan. Ketik pesan di bawah.</div>';
@@ -2109,11 +2100,10 @@
   function sendChatMessage(text) {
     var ses = chatSession();
     var uid = chatUserId(ses);
-    if (!uid || !text.trim()) { console.log('[CHAT] send blocked: uid=', uid, 'text=', text); return; }
+    if (!uid || !text.trim()) return;
     var container = $('chat-messages');
     var chatKey = container ? container.getAttribute('data-chat') : '';
-    console.log('[CHAT] send: uid=', uid, 'chatKey=', chatKey, 'text=', text);
-    if (!chatKey || !isAllowedChat(chatKey)) { console.log('[CHAT] send blocked: chatKey=', chatKey); return; }
+    if (!chatKey || !isAllowedChat(chatKey)) return;
     var msg = {
       id: chatId(),
       chatKey: chatKey,
@@ -2137,7 +2127,6 @@
   /* --- Init chat page --- */
   function initChat() {
     var ses = chatSession();
-    console.log('[CHAT] initChat: ses=', ses);
     var chatView = $('chat-list-view');
     var contactsView = $('chat-contacts-view');
     var roomView = $('chat-room-view');
@@ -2262,18 +2251,14 @@
     var contactSearch = $('chat-contact-search');
 
     if (chatForm) {
-      console.log('[CHAT] form found, binding submit');
       chatForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        console.log('[CHAT] form submitted, value=', chatInput.value);
         if (chatInput.value.trim()) {
           sendChatMessage(chatInput.value);
           chatInput.value = '';
           chatInput.focus();
         }
       });
-    } else {
-      console.log('[CHAT] form NOT found!');
     }
     if (chatBack) {
       chatBack.addEventListener('click', function () {
