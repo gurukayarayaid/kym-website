@@ -21,7 +21,11 @@
   var IDB_NAME = 'kym-filedb';
   var IDB_STORE = 'handles';
   var IDB_STORE_FILES = 'chatfiles';
-  var CHAT_FILE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+  var CHAT_FILE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB (lokal, IndexedDB)
+  var CHAT_FILE_ONLINE_MAX = 1 * 1024 * 1024; // 1 MB — file di atas ini hanya tersimpan lokal
+  var CHAT_FILE_CHUNK = 40000; // karakter per chunk (limit 1 sel Sheets = 50.000)
+  var CHAT_FILE_MAX_CHUNKS = 60; // pengaman download
+  var LS_CHAT_FILE_PENDING = 'kym_chat_file_pending_v1'; // antrean upload [fileId]
 
   /* ---------- File Database (JSON) ---------- */
   var dbFileHandle = null;   // FileSystemFileHandle saat terhubung
@@ -630,7 +634,7 @@
     if (fileInput) fileInput.value = '';
   }
 
-  // Proses file yang dipilih user
+  // Proses file yang dipilih user (gambar / PDF / dokumen)
   function handleChatFileSelect(file) {
     if (!file) return;
     if (file.size > CHAT_FILE_MAX_BYTES) {
@@ -640,13 +644,148 @@
     var reader = new FileReader();
     reader.onload = function (e) {
       var dataUrl = e.target.result;
-      _pendingFile = { file: file, dataUrl: dataUrl, name: file.name, type: file.type, size: file.size };
+      _pendingFile = { file: file, dataUrl: dataUrl, name: file.name, type: file.type || '', size: file.size, compressing: false };
       showChatFilePreview(file, dataUrl);
       var chatInput = $('chat-input');
       if (chatInput) chatInput.focus();
+      // Gambar: kompres otomatis (canvas) agar bisa terkirim online realtime
+      if ((file.type || '').indexOf('image/') === 0) {
+        _pendingFile.compressing = true;
+        compressChatImage(dataUrl, 1280, 0.72).then(function (small) {
+          if (!_pendingFile || _pendingFile.name !== file.name) return;
+          if (small && small.length < dataUrl.length) {
+            _pendingFile.dataUrl = small;
+            _pendingFile.size = Math.round(small.length * 3 / 4);
+            var sizeEl = $('chat-file-preview-size');
+            if (sizeEl) sizeEl.textContent = fmtFileSize(_pendingFile.size) + ' (dioptimasi)';
+          }
+        }).catch(function () {}).then(function () {
+          if (_pendingFile && _pendingFile.name === file.name) _pendingFile.compressing = false;
+        });
+      }
     };
     reader.onerror = function () { toast('❌ Gagal membaca file.'); };
     reader.readAsDataURL(file);
+  }
+
+  /* ---------- Transfer file online (gambar/PDF/dokumen, chunk via Sheets) ---------- */
+  // Kompres gambar via canvas: maks 1280px sisi panjang, JPEG kualitas 0.72
+  function compressChatImage(dataUrl, maxDim, quality) {
+    return new Promise(function (res, rej) {
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          if (!w || !h) { res(null); return; }
+          var scale = Math.min(1, maxDim / Math.max(w, h));
+          // sudah kecil: tidak perlu dikompres
+          if (scale >= 1 && dataUrl.length < 400000) { res(null); return; }
+          var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+          var cv = document.createElement('canvas');
+          cv.width = cw; cv.height = ch;
+          cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+          res(cv.toDataURL('image/jpeg', quality));
+        } catch (e) { rej(e); }
+      };
+      img.onerror = function () { rej(new Error('img')); };
+      img.src = dataUrl;
+    });
+  }
+
+  function loadChatFilePending() {
+    try { return JSON.parse(localStorage.getItem(LS_CHAT_FILE_PENDING)) || []; } catch (e) { return []; }
+  }
+  function saveChatFilePending(a) {
+    try { localStorage.setItem(LS_CHAT_FILE_PENDING, JSON.stringify(a)); } catch (e) {}
+  }
+  function enqueueChatFileUpload(fileId) {
+    if (!fileId) return;
+    var q = loadChatFilePending();
+    if (q.indexOf(fileId) === -1) { q.push(fileId); saveChatFilePending(q); }
+    pumpChatFileUpload();
+  }
+  var _chatFileUploading = false;
+  // Upload berurutan: 1 file dalam 1 waktu, chunk per chunk
+  function pumpChatFileUpload() {
+    if (_chatFileUploading) return;
+    if (!gasActive() || !online()) return;
+    var q = loadChatFilePending();
+    if (!q.length) return;
+    _chatFileUploading = true;
+    var fileId = q[0];
+    chatFileLoad(fileId).then(function (dataUrl) {
+      if (!dataUrl) { shiftChatFilePending(fileId); _chatFileUploading = false; pumpChatFileUpload(); return; }
+      uploadChatFileChunks(fileId, dataUrl).then(function (ok) {
+        if (ok) shiftChatFilePending(fileId);
+        _chatFileUploading = false;
+        pumpChatFileUpload();
+      });
+    }).catch(function () { _chatFileUploading = false; });
+  }
+  function shiftChatFilePending(fileId) {
+    saveChatFilePending(loadChatFilePending().filter(function (id) { return id !== fileId; }));
+  }
+  function uploadChatFileChunks(fileId, dataUrl) {
+    var total = Math.ceil(dataUrl.length / CHAT_FILE_CHUNK);
+    if (total > CHAT_FILE_MAX_CHUNKS) return Promise.resolve(false);
+    var i = 0;
+    function next() {
+      if (i >= total) return Promise.resolve(true);
+      var chunk = dataUrl.substr(i * CHAT_FILE_CHUNK, CHAT_FILE_CHUNK);
+      var idx = i; i++;
+      return gasApi({ action: 'file_put', fileId: fileId, idx: idx, total: total, chunk: chunk })
+        .then(function () { return next(); })
+        .catch(function () { return false; });
+    }
+    return next();
+  }
+  var _chatFileDownloading = {};
+  // Unduh file yang belum ada di IDB lokal (dipanggil tiap pull chat)
+  function syncChatFiles() {
+    if (!gasActive() || !online()) return Promise.resolve(0);
+    var missing = [];
+    loadChat().forEach(function (m) {
+      if (m.deleted || !m.file || !m.file.name) return;
+      var fid = m.file.msgId || m.id;
+      if (!fid || _chatFileDownloading[fid]) return;
+      missing.push({ fid: fid, msg: m });
+    });
+    if (!missing.length) return Promise.resolve(0);
+    // cek IDB dulu agar tidak memanggil server sia-sia
+    return Promise.all(missing.map(function (it) {
+      return chatFileLoad(it.fid).then(function (has) { return has ? null : it; }).catch(function () { return it; });
+    })).then(function (need) {
+      need = need.filter(Boolean);
+      if (!need.length) return 0;
+      return gasApi({ action: 'file_ids' }).then(function (res) {
+        var remote = {};
+        (res.fileIds || []).forEach(function (f) { remote[f.fileId] = f.total || 0; });
+        var jobs = need.filter(function (it) {
+          return remote[it.fid] && remote[it.fid] > 0 && remote[it.fid] <= CHAT_FILE_MAX_CHUNKS;
+        });
+        if (!jobs.length) return 0;
+        var seq = Promise.resolve(0);
+        jobs.forEach(function (it) {
+          seq = seq.then(function (n) { return downloadChatFile(it.fid).then(function (ok) { return n + (ok ? 1 : 0); }); });
+        });
+        return seq.then(function (n) {
+          if (n) { refreshChatRoomIfOpen(); renderChatListIfVisible(); }
+          return n;
+        });
+      }).catch(function () { return 0; });
+    });
+  }
+  function downloadChatFile(fileId) {
+    if (_chatFileDownloading[fileId]) return Promise.resolve(false);
+    _chatFileDownloading[fileId] = true;
+    return gasApi({ action: 'file_get', fileId: fileId }).then(function (res) {
+      var chunks = res.chunks || [];
+      if (!chunks.length || chunks.length !== (res.total || chunks.length)) throw new Error('incomplete');
+      return chatFileSave(fileId, chunks.join('')).then(function () { return true; });
+    }).then(function (ok) {
+      delete _chatFileDownloading[fileId];
+      return ok;
+    }).catch(function () { delete _chatFileDownloading[fileId]; return false; });
   }
   function mergeChatFromRemote(remoteChats) {
     if (!Array.isArray(remoteChats) || !remoteChats.length) return 0;
@@ -697,6 +836,8 @@
         refreshChatRoomIfOpen();
         updateChatBadge();
       }
+      // piggyback: unduh biner file (gambar/PDF/dokumen) yang belum ada lokal
+      syncChatFiles();
       return n;
     }).catch(function () { return 0; });
   }
@@ -775,6 +916,7 @@
     '/** KYM \u2014 Penerima karya puisi & chat ke Google Spreadsheet **/',
     'var HEADER = ["code","nama","jenjang","kelas","sekolah","tahap","judul","isi","profil","time","updatedAt","device"];',
     'var HEADER_CHAT = ["id","chatKey","senderId","senderName","senderRole","text","ts","read","edited","deleted","fileName","fileType","fileSize"];',
+    'var HEADER_CHATFILES = ["fileId","idx","total","chunk"];',
     '',
     'function doPost(e) {',
     '  var out = { ok: true };',
@@ -839,6 +981,42 @@
     '        return o;',
     '      });',
     '    }',
+    '    // --- ChatFiles sheet: biner file (gambar/PDF/dokumen) terpotong per chunk ---',
+    '    var shCF = ss.getSheetByName("ChatFiles") || ss.insertSheet("ChatFiles");',
+    '    fixChatFilesHeader(shCF);',
+    '    if (body.action === "file_put") {',
+    '      var fId = String(body.fileId || "");',
+    '      var fIdx = Number(body.idx || 0);',
+    '      var fTotal = Number(body.total || 0);',
+    '      var fChunk = String(body.chunk == null ? "" : body.chunk);',
+    '      if (fId && fChunk && fChunk.length <= 50000) {',
+    '        var frow = findChatFileRow(shCF, fId, fIdx);',
+    '        if (frow === -1) shCF.appendRow([fId, fIdx, fTotal, fChunk]);',
+    '        else shCF.getRange(frow, 1, 1, 4).setValues([[fId, fIdx, fTotal, fChunk]]);',
+    '      }',
+    '    } else if (body.action === "file_ids") {',
+    '      var fVals = shCF.getDataRange().getValues();',
+    '      if (fVals.length) { fVals.shift(); }',
+    '      var fMap = {};',
+    '      fVals.forEach(function(v){ var k = String(v[0] || ""); if (!k) return; if (!fMap[k]) fMap[k] = { fileId: k, total: Number(v[2] || 0) || 0, count: 0 }; fMap[k].count++; });',
+    '      out.fileIds = Object.keys(fMap).map(function(k){ return fMap[k]; });',
+    '    } else if (body.action === "file_get") {',
+    '      var gId = String(body.fileId || "");',
+    '      var gVals = shCF.getDataRange().getValues();',
+    '      if (gVals.length) { gVals.shift(); }',
+    '      var gRows = gVals.filter(function(v){ return String(v[0]) === gId; });',
+    '      gRows.sort(function(a,b){ return Number(a[1]) - Number(b[1]); });',
+    '      out.fileId = gId;',
+    '      out.total = gRows.length ? (Number(gRows[0][2] || 0) || 0) : 0;',
+    '      out.chunks = gRows.map(function(v){ return String(v[3] == null ? "" : v[3]); });',
+    '    } else if (body.action === "file_del") {',
+    '      var dId = String(body.fileId || "");',
+    '      if (dId) {',
+    '        for (var di = shCF.getLastRow(); di >= 2; di--) {',
+    '          if (String(shCF.getRange(di, 1).getValue()) === dId) shCF.deleteRow(di);',
+    '        }',
+    '      }',
+    '    }',
     '  } catch (err) { out = { ok: false, error: String(err) }; }',
     '  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);',
     '}',
@@ -873,6 +1051,21 @@
     'function findChatRow(sh, id) {',
     '  var values = sh.getDataRange().getValues();',
     '  for (var i = 0; i < values.length; i++) if (String(values[i][0]) === String(id)) return i + 1;',
+    '  return -1;',
+    '}',
+    'function fixChatFilesHeader(sh) {',
+    '  if (sh.getLastRow() === 0) { sh.appendRow(HEADER_CHATFILES); sh.setFrozenRows(1); return; }',
+    '  var w3 = Math.max(sh.getLastColumn(), 4);',
+    '  var hr3 = sh.getRange(1, 1, 1, w3).getValues()[0];',
+    '  var sama3 = HEADER_CHATFILES.every(function (h, i) { return String(hr3[i]) === h; });',
+    '  if (!sama3) {',
+    '    sh.getRange(1, 1, 1, 4).setValues([HEADER_CHATFILES]);',
+    '    if (sh.getLastColumn() > 4) sh.getRange(1, 5, 1, sh.getLastColumn()-4).clearContent();',
+    '  }',
+    '}',
+    'function findChatFileRow(sh, fileId, idx) {',
+    '  var values = sh.getDataRange().getValues();',
+    '  for (var i = 0; i < values.length; i++) if (String(values[i][0]) === String(fileId) && Number(values[i][1]) === Number(idx)) return i + 1;',
     '  return -1;',
     '}'
   ].join('\n');
@@ -2996,7 +3189,14 @@
     var ses = chatSession();
     if (msg.senderId !== chatUserId(ses)) { toast('Hanya pengirim yang bisa hapus pesan.'); return; }
     // Hapus file lampiran dari IndexedDB jika ada
-    if (msg.file && msg.file.msgId) chatFileDel(msg.file.msgId);
+    if (msg.file && msg.file.msgId) {
+      chatFileDel(msg.file.msgId);
+      // hapus chunk online + batalkan antrean upload
+      shiftChatFilePending(msg.file.msgId);
+      if (gasActive() && online()) {
+        gasApi({ action: 'file_del', fileId: msg.file.msgId }).catch(function () {});
+      }
+    }
     msg.deleted = true;
     saveChat(msgs);
     syncChatMessage('delete', msg);
@@ -3058,8 +3258,9 @@
       edited: false,
       deleted: false
     };
-    // Sisipkan metadata file jika ada lampiran
+    // Sisipkan metadata file jika ada lampiran (gambar / PDF / dokumen)
     if (hasFile) {
+      if (_pendingFile.compressing) { toast('⏳ Gambar masih dioptimasi, tunggu sebentar…'); return; }
       msg.file = {
         name: _pendingFile.name,
         type: _pendingFile.type,
@@ -3068,6 +3269,12 @@
       };
       // Simpan data biner ke IndexedDB (async, tidak menunggu)
       chatFileSave(msg.id, _pendingFile.dataUrl);
+      // File ≤1 MB ikut terkirim online realtime via chunk; selebihnya lokal saja
+      if (_pendingFile.size <= CHAT_FILE_ONLINE_MAX) {
+        enqueueChatFileUpload(msg.id);
+      } else {
+        toast('📎 File >1 MB tersimpan di perangkat ini — teks tetap tersinkron.');
+      }
       clearPendingFile();
     }
     var msgs = loadChat();
@@ -3440,6 +3647,7 @@
       if (n) { flushChatOutbox(); }
     });
     flushChatOutbox();
+    pumpChatFileUpload();
   }
 
   _chatGasPullTimer = setInterval(doAdaptiveChatGasPull, 3000);
@@ -3467,12 +3675,15 @@
       gasChatPull();
       flushOutbox();
       flushChatOutbox();
+      pumpChatFileUpload();
     }
   }, 3000);
 
   window.addEventListener('online', function () {
     flushOutbox().then(function(){ silentPoemPull(); });
     flushChatOutbox().then(function(){ gasChatPull(); });
+    pumpChatFileUpload();
+    syncChatFiles();
   });
 
   /* --- Cross-tab sync via storage event --- */
