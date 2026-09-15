@@ -184,7 +184,7 @@
   /* ---------- Navigasi via hash (untuk shortcut PWA & deep-link) ---------- */
   function pageFromHash() {
     var h = (location.hash || '').replace('#', '');
-    return ['materi', 'kirim', 'galeri', 'karyaku', 'admin', 'pasang'].indexOf(h) !== -1 ? h : 'materi';
+    return ['materi', 'kirim', 'galeri', 'karyaku', 'admin', 'pasang', 'chat'].indexOf(h) !== -1 ? h : 'materi';
   }
   var _showPage = showPage;
   showPage = function (name) {
