@@ -1061,6 +1061,7 @@
       $('in-pass').value = '';
       renderHeaderSesi();
       initAdmin();
+      updateChatBadge();
     } else {
       toast('Password salah.');
     }
@@ -1070,6 +1071,7 @@
     try { sessionStorage.removeItem(LS_UNLOCK); } catch (e) {}
     renderHeaderSesi();
     initAdmin();
+    updateChatBadge();
     showPage('admin'); /* hindari galeri menggantung tanpa akses */
     toast('Anda telah keluar dari panel admin.');
   });
@@ -1842,8 +1844,15 @@
   var LS_CHAT = 'kym_chat_v1';
   var chatPollTimer = null;
 
+  function chatSession() {
+    var ses = getSession();
+    if (ses) return ses;
+    if (adminUnlocked()) return { role: 'admin', nama: 'Admin', id: 'admin' };
+    return null;
+  }
   function chatUserId(ses) {
     if (!ses) return '';
+    if (ses.id) return ses.id;
     return ses.nis || ses.nama || 'admin';
   }
 
@@ -1870,7 +1879,7 @@
 
   /* --- Conversation list --- */
   function getConversations() {
-    var ses = getSession();
+    var ses = chatSession();
     var uid = chatUserId(ses);
     var msgs = loadChat();
     var convos = {};
@@ -1889,7 +1898,7 @@
     return arr;
   }
   function getUnreadTotal() {
-    var ses = getSession();
+    var ses = chatSession();
     if (!ses) return 0;
     var uid = chatUserId(ses);
     var total = 0;
@@ -1908,7 +1917,7 @@
 
   /* --- Render conversation list --- */
   function renderChatList() {
-    var ses = getSession();
+    var ses = chatSession();
     var uid = chatUserId(ses);
     var list = $('chat-list');
     if (!list) return;
@@ -1968,7 +1977,7 @@
 
   /* --- Render messages in room --- */
   function renderChatMessages(chatKey) {
-    var ses = getSession();
+    var ses = chatSession();
     var uid = chatUserId(ses);
     var container = $('chat-messages');
     if (!container) return;
@@ -2049,7 +2058,7 @@
 
   /* --- Mark read --- */
   function markChatRead(chatKey) {
-    var ses = getSession();
+    var ses = chatSession();
     var uid = chatUserId(ses);
     if (!uid) return;
     var msgs = loadChat();
@@ -2066,7 +2075,7 @@
 
   /* --- Send message --- */
   function sendChatMessage(text) {
-    var ses = getSession();
+    var ses = chatSession();
     var uid = chatUserId(ses);
     if (!uid || !text.trim()) return;
     var container = $('chat-messages');
@@ -2093,7 +2102,7 @@
 
   /* --- Init chat page --- */
   function initChat() {
-    var ses = getSession();
+    var ses = chatSession();
     var chatView = $('chat-list-view');
     var roomView = $('chat-room-view');
     if (!chatView || !roomView) return;
@@ -2110,7 +2119,7 @@
 
   /* --- Auto-create chat room for murid/GTK with admin --- */
   function ensureAdminChat() {
-    var ses = getSession();
+    var ses = chatSession();
     if (!ses || ses.role === 'admin') return;
     var uid = chatUserId(ses);
     var chatKey = getChatKey(uid, 'admin');
