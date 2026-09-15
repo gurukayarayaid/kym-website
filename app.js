@@ -204,7 +204,7 @@
   /* ---------- Navigasi via hash (untuk shortcut PWA & deep-link) ---------- */
   function pageFromHash() {
     var h = (location.hash || '').replace('#', '');
-    return ['materi', 'kirim', 'galeri', 'karyaku', 'admin', 'pasang', 'chat'].indexOf(h) !== -1 ? h : 'materi';
+    return ['materi', 'kirim', 'galeri', 'karyaku', 'admin', 'pasang', 'chat'].indexOf(h) !== -1 ? h : 'kirim';
   }
   var _showPage = showPage;
   showPage = function (name) {
@@ -694,9 +694,9 @@
   }
   function showPage(name) {
     var _ses = getSession();
-    if (name === 'admin' && _ses && _ses.role !== 'guru') name = 'materi'; /* murid tidak dapat membuka admin */
-    if (name === 'galeri' && !bolehLihatGaleri()) name = 'materi'; /* galeri khusus admin & GTK */
-    if (name === 'chat' && !_ses && !adminUnlocked()) name = 'materi'; /* chat khusus user login */
+    if (name === 'admin' && _ses && _ses.role !== 'guru') name = 'kirim'; /* murid tidak dapat membuka admin */
+    if (name === 'galeri' && !bolehLihatGaleri()) name = 'kirim'; /* galeri khusus admin & GTK */
+    if (name === 'chat' && !_ses && !adminUnlocked()) name = 'kirim'; /* chat khusus user login */
     updateGaleriNav();
     document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
     var pg = $('page-' + name);
@@ -823,7 +823,7 @@
     clearSession();
     renderLoginUi();
     fCounter();
-    showPage('materi');
+    showPage('kirim');
   }
 
   function renderLoginUi() {

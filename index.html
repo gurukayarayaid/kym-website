@@ -45,21 +45,22 @@
   .admin-keluar .btn-adm-keluar:active { transform: scale(.92); }
   @media (min-width: 640px) { .admin-keluar { padding: 5px 8px 5px 16px; } .admin-keluar .btn-adm-keluar { flex: 0 0 38px; width: 38px; height: 38px; } }
 
-  /* Bottom navigation khas Android */
-  nav.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(15,23,42,.07); display: flex; justify-content: center; padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
-  nav.bottom a { flex: 0 1 120px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 2px 9px; color: var(--muted); font-weight: 600; font-size: .68rem; cursor: pointer; }
+  /* Bottom navigation khas Android — hamburger mepet kiri, kirim/karyaku mepet kanan */
+  nav.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -2px 12px rgba(15,23,42,.07); display: flex; justify-content: flex-start; align-items: stretch; padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+  nav.bottom a { flex: 0 1 110px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 2px 9px; color: var(--muted); font-weight: 600; font-size: .68rem; cursor: pointer; }
   nav.bottom a .ic { font-size: 21px; line-height: 1; padding: 5px 18px; border-radius: 999px; transition: background .15s; }
   nav.bottom a.active { color: var(--primary-2); }
   nav.bottom a.active .ic { background: var(--primary); }
+  .nav-spacer { flex: 1 1 0; min-width: 0; pointer-events: none; display: block; }
 
-  /* Hamburger menu */
-  .hamburger-wrap { position: relative; flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  /* Hamburger menu — mepet kiri layar */
+  .hamburger-wrap { position: relative; flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-left: 0; }
   .hamburger-btn { background: none; border: none; cursor: pointer; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; z-index: 52; }
   .hamburger-btn span { display: block; width: 22px; height: 2.5px; background: var(--muted); border-radius: 2px; transition: transform .2s, opacity .2s; }
   .hamburger-btn.open span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
   .hamburger-btn.open span:nth-child(2) { opacity: 0; }
   .hamburger-btn.open span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
-  .hamburger-popup { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.15); padding: 6px; min-width: 180px; display: none; z-index: 60; }
+  .hamburger-popup { position: absolute; bottom: calc(100% + 8px); left: 8px; transform: none; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.15); padding: 6px; min-width: 190px; display: none; z-index: 60; }
   .hamburger-popup.show { display: block; }
   .hamburger-item { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 8px; font-size: .88rem; font-weight: 600; color: var(--ink); white-space: nowrap; transition: background .12s; }
   .hamburger-item:hover { background: var(--bg); }
@@ -311,11 +312,13 @@
       <span></span><span></span><span></span>
     </button>
     <div class="hamburger-popup" id="hamburger-popup">
+      <a href="#" data-nav="materi" class="hamburger-item">📖 Materi</a>
       <a href="#" data-nav="admin" class="hamburger-item" id="hamburger-admin">🔐 Admin</a>
     </div>
   </div>
-  <a href="#" data-nav="materi" class="active"><span class="ic">📖</span><span class="lb">Materi</span></a>
-  <a href="#" data-nav="kirim"><span class="ic">✍️</span><span class="lb">Kirim</span></a>
+  <span class="nav-spacer" aria-hidden="true"></span>
+  <span class="nav-spacer" aria-hidden="true"></span>
+  <a href="#" data-nav="kirim" class="active"><span class="ic">✍️</span><span class="lb">Kirim</span></a>
   <a href="#" data-nav="karyaku"><span class="ic">📚</span><span class="lb">Karya Saya</span></a>
   <a href="#" data-nav="chat" id="nav-chat" style="display:none;"><span class="ic">💬</span><span class="lb">Chat</span><span class="chat-badge" id="chat-badge" style="display:none;">0</span></a>
   <a href="#" data-nav="galeri"><span class="ic">🖼️</span><span class="lb">Galeri</span></a>
@@ -325,7 +328,7 @@
 <div class="wrap">
 
   <!-- ================= HALAMAN: MATERI ================= -->
-  <section id="page-materi" class="page active">
+  <section id="page-materi" class="page">
     <div class="card">
       <span class="pill gold">POIN-POIN MATERI KYM</span>
       <h2 style="margin-top:10px;">Poin-Poin Materi KYM — Tema &ldquo;Rukun dengan Teman&rdquo;</h2>
@@ -461,7 +464,7 @@
   </section>
 
   <!-- ================= HALAMAN: KIRIM PUISI ================= -->
-  <section id="page-kirim" class="page">
+  <section id="page-kirim" class="page active">
     <div class="card">
       <h2>✍️ Kirim Puisi</h2>
 
