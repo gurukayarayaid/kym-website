@@ -20,6 +20,8 @@
   var LS_CHAT_NOTIFIED = 'kym_chat_notified_v1';
   var IDB_NAME = 'kym-filedb';
   var IDB_STORE = 'handles';
+  var IDB_STORE_FILES = 'chatfiles';
+  var CHAT_FILE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
   /* ---------- File Database (JSON) ---------- */
   var dbFileHandle = null;   // FileSystemFileHandle saat terhubung
@@ -30,8 +32,12 @@
 
   function idbOpen() {
     return new Promise(function (res, rej) {
-      var rq = indexedDB.open(IDB_NAME, 1);
-      rq.onupgradeneeded = function () { rq.result.createObjectStore(IDB_STORE); };
+      var rq = indexedDB.open(IDB_NAME, 2);
+      rq.onupgradeneeded = function (ev) {
+        var db = rq.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+        if (!db.objectStoreNames.contains(IDB_STORE_FILES)) db.createObjectStore(IDB_STORE_FILES);
+      };
       rq.onsuccess = function () { res(rq.result); };
       rq.onerror = function () { rej(rq.error); };
     });
@@ -495,6 +501,153 @@
     q.push({ action: action, chat: chat, ts: Date.now() });
     saveChatOutbox(q);
   }
+
+  /* ---------- Chat File Attachment (IndexedDB) ---------- */
+  // Simpan data URL file ke IndexedDB dengan kunci msgId
+  function chatFileSave(msgId, dataUrl) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(IDB_STORE_FILES, 'readwrite');
+        tx.objectStore(IDB_STORE_FILES).put(dataUrl, msgId);
+        tx.oncomplete = function () { res(); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  // Ambil data URL file dari IndexedDB
+  function chatFileLoad(msgId) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(IDB_STORE_FILES, 'readonly');
+        var rq = tx.objectStore(IDB_STORE_FILES).get(msgId);
+        rq.onsuccess = function () { res(rq.result || null); };
+        rq.onerror = function () { rej(rq.error); };
+      });
+    });
+  }
+  // Hapus data URL file dari IndexedDB
+  function chatFileDel(msgId) {
+    return idbOpen().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(IDB_STORE_FILES, 'readwrite');
+        tx.objectStore(IDB_STORE_FILES).delete(msgId);
+        tx.oncomplete = function () { res(); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    }).catch(function () {});
+  }
+
+  // State file yang sedang dipilih (belum dikirim)
+  var _pendingFile = null; // { file, dataUrl, name, type, size }
+
+  // Format ukuran file menjadi KB/MB
+  function fmtFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // Ikon berdasarkan tipe file
+  function fileIcon(type, name) {
+    if ((type || '').indexOf('image/') === 0) return '🖼️';
+    if (type === 'application/pdf' || (name || '').match(/\.pdf$/i)) return '📄';
+    if ((name || '').match(/\.(docx?|odt)$/i)) return '📝';
+    if ((name || '').match(/\.(xlsx?|ods)$/i)) return '📊';
+    if ((name || '').match(/\.(pptx?|odp)$/i)) return '📋';
+    return '📎';
+  }
+
+  // Teks preview pesan untuk list/notifikasi: aman untuk pesan file-only (teks kosong)
+  function chatPreviewText(m, maxLen) {
+    var t = (m && m.text) || '';
+    if (t) return t.length > maxLen ? t.substr(0, maxLen) + '…' : t;
+    if (m && m.file && m.file.name) return '📎 ' + m.file.name;
+    return '';
+  }
+
+  // Bangun payload chat yang aman untuk GAS: hanya field yang diizinkan +
+  // metadata file kecil (nama/tipe/ukuran). Biner file TIDAK PERNAH dikirim
+  // (tetap di IndexedDB lokal) agar kolom Sheets tidak jebol.
+  function sanitizeChatForGas(chat) {
+    if (!chat) return {};
+    var out = {
+      id: chat.id,
+      chatKey: chat.chatKey,
+      senderId: chat.senderId,
+      senderName: chat.senderName,
+      senderRole: chat.senderRole,
+      text: chat.text || '',
+      ts: chat.ts,
+      read: !!chat.read,
+      edited: !!chat.edited,
+      deleted: !!chat.deleted
+    };
+    var f = chat.file;
+    // dukung format objek {name,type,size} maupun flat fileName/fileType/fileSize
+    var fname = (f && f.name) || chat.fileName || '';
+    if (fname) {
+      out.file = {
+        name: String(fname).slice(0, 120),
+        type: String((f && f.type) || chat.fileType || ''),
+        size: Number((f && f.size) || chat.fileSize || 0) || 0,
+        msgId: chat.id
+      };
+    }
+    return out;
+  }
+
+  // Tampilkan preview file di area preview sebelum kirim
+  function showChatFilePreview(file, dataUrl) {
+    var preview = $('chat-file-preview');
+    var thumbWrap = $('chat-file-preview-thumb-wrap');
+    var nameEl = $('chat-file-preview-name');
+    var sizeEl = $('chat-file-preview-size');
+    if (!preview || !thumbWrap || !nameEl || !sizeEl) return;
+    thumbWrap.innerHTML = '';
+    if ((file.type || '').indexOf('image/') === 0) {
+      var img = document.createElement('img');
+      img.src = dataUrl;
+      img.className = 'chat-file-preview-thumb';
+      img.alt = file.name;
+      thumbWrap.appendChild(img);
+    } else {
+      var iconDiv = document.createElement('div');
+      iconDiv.className = 'chat-file-preview-doc';
+      iconDiv.textContent = fileIcon(file.type, file.name);
+      thumbWrap.appendChild(iconDiv);
+    }
+    nameEl.textContent = file.name;
+    sizeEl.textContent = fmtFileSize(file.size);
+    preview.style.display = 'flex';
+  }
+
+  // Bersihkan file yang sedang dipilih
+  function clearPendingFile() {
+    _pendingFile = null;
+    var preview = $('chat-file-preview');
+    var fileInput = $('chat-file-input');
+    if (preview) preview.style.display = 'none';
+    if (fileInput) fileInput.value = '';
+  }
+
+  // Proses file yang dipilih user
+  function handleChatFileSelect(file) {
+    if (!file) return;
+    if (file.size > CHAT_FILE_MAX_BYTES) {
+      toast('❌ File terlalu besar (maks 5 MB). Pilih file yang lebih kecil.');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var dataUrl = e.target.result;
+      _pendingFile = { file: file, dataUrl: dataUrl, name: file.name, type: file.type, size: file.size };
+      showChatFilePreview(file, dataUrl);
+      var chatInput = $('chat-input');
+      if (chatInput) chatInput.focus();
+    };
+    reader.onerror = function () { toast('❌ Gagal membaca file.'); };
+    reader.readAsDataURL(file);
+  }
   function mergeChatFromRemote(remoteChats) {
     if (!Array.isArray(remoteChats) || !remoteChats.length) return 0;
     var local = loadChat();
@@ -515,7 +668,11 @@
         if (rm.edited && !lm.edited) need = true;
         if (rm.deleted && !lm.deleted) need = true;
         if (rm.read && !lm.read) need = true;
-        if (rm.text !== lm.text) need = true;
+        if ((rm.text || '') !== (lm.text || '')) need = true;
+        // metadata file: remote menang jika lokal belum punya info file
+        var rmFile = rm.file ? (rm.file.name + '|' + rm.file.size) : '';
+        var lmFile = lm.file ? (lm.file.name + '|' + lm.file.size) : '';
+        if (rmFile && rmFile !== lmFile) need = true;
         if (need) { var idx = local.indexOf(lm); local[idx] = rm; updated++; }
       }
     });
@@ -581,7 +738,7 @@
   }
   function gasChatPushAll() {
     if (!gasActive() || !online()) return Promise.resolve(0);
-    var list = loadChat();
+    var list = loadChat().map(function (c) { return sanitizeChatForGas(c); });
     if (!list.length) return Promise.resolve(0);
     return gasApi({ action: 'chat_bulk', chats: list }).then(function () {
       saveChatOutbox([]);
@@ -592,9 +749,10 @@
     var q = loadChatOutbox();
     if (!q.length || !gasActive() || !online()) return Promise.resolve(0);
     var next = q[0];
-    var payload = next.action === 'chat_create' ? { action: 'chat_create', chat: next.chat }
-                : next.action === 'chat_update' ? { action: 'chat_update', chat: next.chat }
-                : { action: 'chat_delete', chat: next.chat };
+    var clean = sanitizeChatForGas(next.chat);
+    var payload = next.action === 'chat_create' ? { action: 'chat_create', chat: clean }
+                : next.action === 'chat_update' ? { action: 'chat_update', chat: clean }
+                : { action: 'chat_delete', chat: clean };
     return gasApi(payload).then(function () {
       q.shift();
       saveChatOutbox(q);
@@ -603,19 +761,20 @@
   }
   function syncChatMessage(action, chat) {
     if (!gasActive()) return;
-    var payload = action === 'create' ? { action: 'chat_create', chat: chat }
-                : action === 'update' ? { action: 'chat_update', chat: chat }
-                : { action: 'chat_delete', chat: chat };
-    if (!online()) { enqueueChat(payload.action, chat); return; }
+    var clean = sanitizeChatForGas(chat);
+    var payload = action === 'create' ? { action: 'chat_create', chat: clean }
+                : action === 'update' ? { action: 'chat_update', chat: clean }
+                : { action: 'chat_delete', chat: clean };
+    if (!online()) { enqueueChat(payload.action, clean); return; }
     gasApi(payload).catch(function (e) {
-      if (e.message !== 'offline') enqueueChat(payload.action, chat);
+      if (e.message !== 'offline') enqueueChat(payload.action, clean);
     });
   }
 
   var APPS_SCRIPT_CODE = [
     '/** KYM \u2014 Penerima karya puisi & chat ke Google Spreadsheet **/',
     'var HEADER = ["code","nama","jenjang","kelas","sekolah","tahap","judul","isi","profil","time","updatedAt","device"];',
-    'var HEADER_CHAT = ["id","chatKey","senderId","senderName","senderRole","text","ts","read","edited","deleted"];',
+    'var HEADER_CHAT = ["id","chatKey","senderId","senderName","senderRole","text","ts","read","edited","deleted","fileName","fileType","fileSize"];',
     '',
     'function doPost(e) {',
     '  var out = { ok: true };',
@@ -657,10 +816,14 @@
     '      var cItems = body.action === "chat_bulk" ? (body.chats || []) : [body.chat || {}];',
     '      cItems.forEach(function (c) {',
     '        if (!c.id) return;',
-    '        var crow = [c.id, c.chatKey, c.senderId, c.senderName, c.senderRole, c.text, c.ts, c.read ? "1" : "", c.edited ? "1" : "", c.deleted ? "1" : ""];',
+    '        var cf = c.file || {};',
+    '        var cfName = String(cf.name || c.fileName || "").slice(0, 120);',
+    '        var cfType = String(cf.type || c.fileType || "");',
+    '        var cfSize = Number(cf.size || c.fileSize || 0) || 0;',
+    '        var crow = [c.id, c.chatKey, c.senderId, c.senderName, c.senderRole, c.text, c.ts, c.read ? "1" : "", c.edited ? "1" : "", c.deleted ? "1" : "", cfName, cfType, cfSize];',
     '        var erow = findChatRow(shChat, c.id);',
     '        if (erow === -1) shChat.appendRow(crow);',
-    '        else shChat.getRange(erow, 1, 1, 10).setValues([crow]);',
+    '        else shChat.getRange(erow, 1, 1, 13).setValues([crow]);',
     '      });',
     '      out.chatCount = cItems.length;',
     '    } else if (body.action === "chat_delete") {',
@@ -670,7 +833,10 @@
     '      var cVals = shChat.getDataRange().getValues();',
     '      if (cVals.length) { cVals.shift(); }',
     '      out.chats = cVals.filter(function(v){return String(v[0]).trim()!=="";}).map(function (v) {',
-    '        return { id: String(v[0]), chatKey: String(v[1]), senderId: String(v[2]), senderName: String(v[3]), senderRole: String(v[4]), text: String(v[5]), ts: Number(v[6]), read: String(v[7])==="1", edited: String(v[8])==="1", deleted: String(v[9])==="1" };',
+    '        var o = { id: String(v[0]), chatKey: String(v[1]), senderId: String(v[2]), senderName: String(v[3]), senderRole: String(v[4]), text: String(v[5] == null ? "" : v[5]), ts: Number(v[6]), read: String(v[7])==="1", edited: String(v[8])==="1", deleted: String(v[9])==="1" };',
+    '        var fn = String(v[10] == null ? "" : v[10]);',
+    '        if (fn) o.file = { name: fn, type: String(v[11] == null ? "" : v[11]), size: Number(v[12] || 0) || 0, msgId: String(v[0]) };',
+    '        return o;',
     '      });',
     '    }',
     '  } catch (err) { out = { ok: false, error: String(err) }; }',
@@ -690,12 +856,12 @@
     '}',
     'function fixChatHeader(sh) {',
     '  if (sh.getLastRow() === 0) { sh.appendRow(HEADER_CHAT); sh.setFrozenRows(1); return; }',
-    '  var w2 = Math.max(sh.getLastColumn(), 10);',
+    '  var w2 = Math.max(sh.getLastColumn(), 13);',
     '  var hr2 = sh.getRange(1, 1, 1, w2).getValues()[0];',
     '  var sama2 = HEADER_CHAT.every(function (h, i) { return String(hr2[i]) === h; });',
     '  if (!sama2) {',
-    '    sh.getRange(1, 1, 1, 10).setValues([HEADER_CHAT]);',
-    '    if (sh.getLastColumn() > 10) sh.getRange(1, 11, 1, sh.getLastColumn()-10).clearContent();',
+    '    sh.getRange(1, 1, 1, 13).setValues([HEADER_CHAT]);',
+    '    if (sh.getLastColumn() > 13) sh.getRange(1, 14, 1, sh.getLastColumn()-13).clearContent();',
     '  }',
     '}',
     '',
@@ -2326,7 +2492,7 @@
       senderEl.textContent = msg.senderName + ' (' + roleName + ')';
     }
     if (bodyEl) {
-      bodyEl.textContent = msg.text || '';
+      bodyEl.textContent = chatPreviewText(msg, 120);
     }
 
     toastEl.setAttribute('data-chat', msg.chatKey);
@@ -2359,7 +2525,7 @@
     vibrateDevice([150, 80, 150]);
     updateAppBadge(getUnreadTotal());
 
-    var preview = msg.text.length > 90 ? msg.text.substr(0, 90) + '…' : msg.text;
+    var preview = chatPreviewText(msg, 90);
     flashDocumentTitle((msg.senderName || 'Pesan') + ': ' + preview);
     showInAppToast(msg);
 
@@ -2638,7 +2804,7 @@
       if (!other) return;
       var avatarCls = other.role === 'guru' ? 'guru' : other.role === 'admin' ? 'admin' : 'murid';
       var avatarIcon = other.role === 'guru' ? '👨‍🏫' : other.role === 'admin' ? '🛡️' : '👩‍🎓';
-      var preview = c.lastMsg ? (c.lastMsg.text.length > 40 ? c.lastMsg.text.substr(0, 40) + '…' : c.lastMsg.text) : '';
+      var preview = c.lastMsg ? chatPreviewText(c.lastMsg, 40) : '';
       var time = c.lastMsg ? chatTime(c.lastMsg.ts) : '';
       var unread = c.unread[uid] || 0;
       html += '<div class="chat-list-item" data-chat="' + c.key + '" data-user="' + other.id + '" data-name="' + esc(other.name) + '" data-role="' + other.role + '">'
@@ -2695,7 +2861,7 @@
     // cek apakah scroll sedang di bawah (dekat bottom) sebelum render
     var wasAtBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 80;
     var prevSig = container.getAttribute('data-sig') || '';
-    var newSig = msgs.map(function(m){return m.id + (m.edited?'E':'') + (m.deleted?'D':'') + m.text.length;}).join('|');
+    var newSig = msgs.map(function(m){return m.id + (m.edited?'E':'') + (m.deleted?'D':'') + (m.text || '').length + (m.file ? 'F' + m.file.name + '|' + m.file.size : '');}).join('|');
     if (prevSig === newSig && container.getAttribute('data-chat') === chatKey) {
       // tidak ada perubahan visual, jangan re-render agar tidak kedip
       markChatRead(chatKey);
@@ -2719,9 +2885,12 @@
       var edited = m.edited ? ' <span style="opacity:.6;font-size:.7rem;">(diedit)</span>' : '';
       // hanya pesan baru (<2.5 detik) dapat animasi 'new' agar tidak kedip massal
       var isNew = (now - m.ts) < 2500;
+      // placeholder lampiran (diisi async setelah render)
+      var fileSlot = m.file ? '<div class="chat-file-slot" data-msgid="' + m.id + '">⏳ Memuat lampiran…</div>' : '';
       html += '<div class="chat-msg ' + cls + (isNew ? ' new' : '') + '" data-msgid="' + m.id + '">'
         + (isMe ? '' : '<div class="chat-sender">' + esc(m.senderName) + '</div>')
-        + '<div class="chat-text">' + esc(m.text) + edited + '</div>'
+        + fileSlot
+        + (m.text ? '<div class="chat-text">' + esc(m.text) + edited + '</div>' : (m.file ? (edited ? '<div class="chat-text">' + edited + '</div>' : '') : '<div class="chat-text">' + edited + '</div>'))
         + actions
         + '<div class="chat-time">' + chatTime(m.ts) + '</div>'
         + '</div>';
@@ -2735,6 +2904,54 @@
     }
     markChatRead(chatKey);
     bindChatActions();
+    // Isi slot lampiran secara async
+    msgs.forEach(function (m) {
+      if (!m.file) return;
+      var slot = container.querySelector('.chat-file-slot[data-msgid="' + m.id + '"]');
+      if (!slot) return;
+      chatFileLoad(m.id).then(function (dataUrl) {
+        if (!slot.parentNode) return; // sudah di-replace
+        if (dataUrl) {
+          if ((m.file.type || '').indexOf('image/') === 0) {
+            var imgEl = document.createElement('img');
+            imgEl.src = dataUrl;
+            imgEl.className = 'chat-msg-image';
+            imgEl.alt = m.file.name;
+            imgEl.title = m.file.name;
+            imgEl.addEventListener('click', function () {
+              var win = window.open('', '_blank');
+              if (!win) return;
+              win.document.title = m.file.name;
+              var big = win.document.createElement('img');
+              big.src = dataUrl;
+              big.style.maxWidth = '100%';
+              big.style.cursor = 'zoom-out';
+              big.onclick = function () { win.close(); };
+              win.document.body.appendChild(big);
+            });
+            slot.replaceWith(imgEl);
+          } else {
+            var a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = m.file.name;
+            a.className = 'chat-msg-file';
+            a.innerHTML = '<span class="chat-msg-file-icon">' + fileIcon(m.file.type, m.file.name) + '</span>'
+              + '<span class="chat-msg-file-info"><span class="chat-msg-file-name">' + esc(m.file.name) + '</span><span class="chat-msg-file-size">' + fmtFileSize(m.file.size) + ' · Ketuk untuk unduh</span></span>';
+            slot.replaceWith(a);
+          }
+        } else {
+          // File tidak ditemukan di IndexedDB (perangkat lain)
+          var noFile = document.createElement('div');
+          noFile.className = 'chat-msg-file';
+          noFile.style.opacity = '.6';
+          noFile.innerHTML = '<span class="chat-msg-file-icon">' + fileIcon(m.file.type, m.file.name) + '</span>'
+            + '<span class="chat-msg-file-info"><span class="chat-msg-file-name">' + esc(m.file.name) + '</span><span class="chat-msg-file-size">' + fmtFileSize(m.file.size) + ' · File hanya tersedia di perangkat pengirim</span></span>';
+          slot.replaceWith(noFile);
+        }
+      }).catch(function () {
+        if (slot.parentNode) slot.textContent = '⚠️ Gagal memuat lampiran.';
+      });
+    });
   }
 
   /* --- Bind edit/hapus buttons --- */
@@ -2759,9 +2976,9 @@
     if (!msg) return;
     var ses = chatSession();
     if (msg.senderId !== chatUserId(ses)) { toast('Hanya pengirim yang bisa edit pesan.'); return; }
-    var newText = prompt('Edit pesan:', msg.text);
+    var newText = prompt('Edit pesan:', msg.text || '');
     if (newText === null || !newText.trim()) return;
-    if (newText.trim() === msg.text) return;
+    if (newText.trim() === (msg.text || '')) return;
     msg.text = newText.trim();
     msg.edited = true;
     saveChat(msgs);
@@ -2778,6 +2995,8 @@
     if (!msg) return;
     var ses = chatSession();
     if (msg.senderId !== chatUserId(ses)) { toast('Hanya pengirim yang bisa hapus pesan.'); return; }
+    // Hapus file lampiran dari IndexedDB jika ada
+    if (msg.file && msg.file.msgId) chatFileDel(msg.file.msgId);
     msg.deleted = true;
     saveChat(msgs);
     syncChatMessage('delete', msg);
@@ -2811,7 +3030,8 @@
   function sendChatMessage(text) {
     var ses = chatSession();
     var uid = chatUserId(ses);
-    if (!uid || !text.trim()) { toast('Pesan kosong.'); return; }
+    var hasFile = !!_pendingFile;
+    if (!uid || (!text.trim() && !hasFile)) { toast('Pesan atau file tidak boleh kosong.'); return; }
     var container = $('chat-messages');
     var chatKey = container ? container.getAttribute('data-chat') : '';
     // fallback: jika room belum punya chatKey, buat otomatis (murid/GTK -> admin)
@@ -2838,6 +3058,18 @@
       edited: false,
       deleted: false
     };
+    // Sisipkan metadata file jika ada lampiran
+    if (hasFile) {
+      msg.file = {
+        name: _pendingFile.name,
+        type: _pendingFile.type,
+        size: _pendingFile.size,
+        msgId: msg.id
+      };
+      // Simpan data biner ke IndexedDB (async, tidak menunggu)
+      chatFileSave(msg.id, _pendingFile.dataUrl);
+      clearPendingFile();
+    }
     var msgs = loadChat();
     msgs.push(msg);
     saveChat(msgs);
@@ -2940,12 +3172,12 @@
       var lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
       var unread = 0;
       for (var i = 0; i < msgs.length; i++) if (msgs[i].senderId !== uid && !msgs[i].read) unread++;
-      var preview = lastMsg ? esc(lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : '';
+      var preview = lastMsg ? chatPreviewText(lastMsg, 35) : '';
       html += '<div class="chat-contact" data-nis="' + nis + '" data-nama="' + esc(nama) + '" data-role="murid">'
         + '<div class="chat-contact-avatar">👩‍🎓</div>'
         + '<div class="chat-contact-info">'
         + '<div class="chat-contact-name">' + esc(nama) + '</div>'
-        + '<div class="chat-contact-meta">' + (kelasNama[kelas] || 'Kelas ' + kelas) + ' · NIS ' + nis + (preview ? ' · ' + preview : '') + '</div>'
+        + '<div class="chat-contact-meta">' + (kelasNama[kelas] || 'Kelas ' + kelas) + ' · NIS ' + nis + (preview ? ' · ' + esc(preview) : '') + '</div>'
         + '</div>'
         + (unread ? '<div class="chat-contact-unread">' + unread + '</div>' : '<div class="chat-contact-badge">' + (lastMsg ? '💬' : '✉️') + '</div>')
         + '</div>';
@@ -2961,12 +3193,12 @@
       var lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
       var unread = 0;
       for (var i = 0; i < msgs.length; i++) if (msgs[i].senderId !== uid && !msgs[i].read) unread++;
-      var preview = lastMsg ? esc(lastMsg.text.length > 35 ? lastMsg.text.substr(0, 35) + '…' : lastMsg.text) : '';
+      var preview = lastMsg ? chatPreviewText(lastMsg, 35) : '';
       html += '<div class="chat-contact" data-nis="' + esc(nama) + '" data-nama="' + esc(nama) + '" data-role="guru">'
         + '<div class="chat-contact-avatar" style="background:#d1fae5;color:#065f46;">👨‍🏫</div>'
         + '<div class="chat-contact-info">'
         + '<div class="chat-contact-name">' + esc(nama) + '</div>'
-        + '<div class="chat-contact-meta">Guru/Tendik (GTK)' + (preview ? ' · ' + preview : '') + '</div>'
+        + '<div class="chat-contact-meta">Guru/Tendik (GTK)' + (preview ? ' · ' + esc(preview) : '') + '</div>'
         + '</div>'
         + (unread ? '<div class="chat-contact-unread">' + unread + '</div>' : '<div class="chat-contact-badge">' + (lastMsg ? '💬' : '✉️') + '</div>')
         + '</div>';
@@ -3017,19 +3249,56 @@
     var tabConv = $('chat-tab-conv');
     var tabContacts = $('chat-tab-contacts');
     var contactSearch = $('chat-contact-search');
+    var btnAttach = $('btn-chat-attach');
+    var fileInput = $('chat-file-input');
+    var btnFileClear = $('btn-chat-file-clear');
 
     if (chatForm) {
       chatForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        if (chatInput.value.trim()) {
-          sendChatMessage(chatInput.value);
-          chatInput.value = '';
-          chatInput.focus();
+        var hasText = chatInput && chatInput.value.trim();
+        var hasPending = !!_pendingFile;
+        if (hasText || hasPending) {
+          sendChatMessage(chatInput ? chatInput.value : '');
+          if (chatInput) { chatInput.value = ''; chatInput.focus(); }
+        }
+      });
+    }
+
+    // Tombol 📎 membuka file picker
+    if (btnAttach && fileInput) {
+      btnAttach.addEventListener('click', function () { fileInput.click(); });
+    }
+    // File picker berubah
+    if (fileInput) {
+      fileInput.addEventListener('change', function () {
+        if (fileInput.files && fileInput.files[0]) {
+          handleChatFileSelect(fileInput.files[0]);
+        }
+      });
+    }
+    // Tombol ✕ batal lampiran
+    if (btnFileClear) {
+      btnFileClear.addEventListener('click', function () { clearPendingFile(); });
+    }
+    // Paste gambar dari clipboard ke input chat
+    if (chatInput) {
+      chatInput.addEventListener('paste', function (e) {
+        var items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image/') === 0) {
+            e.preventDefault();
+            var file = items[i].getAsFile();
+            if (file) handleChatFileSelect(file);
+            break;
+          }
         }
       });
     }
     if (chatBack) {
       chatBack.addEventListener('click', function () {
+        clearPendingFile();
         $('chat-room-view').style.display = 'none';
         if (tabConv && tabConv.classList.contains('active')) {
           $('chat-list-view').style.display = '';
