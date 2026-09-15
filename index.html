@@ -79,6 +79,17 @@
   .chat-back:hover { background: var(--bg); }
   .chat-header-name { font-weight: 700; font-size: .95rem; color: var(--ink); }
   .chat-header-role { font-size: .75rem; color: var(--muted); }
+  .chat-header-info { flex: 1; min-width: 0; }
+  /* Menu titik-tiga di ruang obrolan */
+  .chat-menu-wrap { position: relative; }
+  .chat-menu-btn { background: none; border: none; cursor: pointer; font-size: 1.25rem; line-height: 1; color: var(--muted); padding: 4px 8px; border-radius: 8px; font-weight: 700; letter-spacing: 1px; }
+  .chat-menu-btn:hover { background: var(--bg); color: var(--ink); }
+  .chat-menu-popup { position: absolute; top: calc(100% + 6px); right: 0; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,.15); padding: 6px; min-width: 220px; display: none; z-index: 60; }
+  .chat-menu-popup.show { display: block; }
+  .chat-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 14px; border: none; background: none; border-radius: 8px; font: inherit; font-size: .88rem; font-weight: 600; color: var(--ink); white-space: nowrap; cursor: pointer; text-align: left; }
+  .chat-menu-item:hover { background: var(--bg); }
+  .chat-menu-item.danger { color: var(--danger); }
+  .chat-menu-item.danger:hover { background: #fee2e2; }
   .chat-messages { height: 52vh; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; background: #f8fafc; -webkit-overflow-scrolling: touch; }
   .chat-msg { max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: .9rem; line-height: 1.5; word-break: break-word; will-change: auto; }
   .chat-msg.new { animation: chatIn .2s ease; }
@@ -696,6 +707,12 @@
           </div>
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
             <button type="button" class="chat-act-btn" id="btn-room-notif-status" title="Notifikasi Pesan" style="font-size:1.05rem;">🔔</button>
+            <div class="chat-menu-wrap">
+              <button type="button" class="chat-menu-btn" id="chat-menu-btn" aria-label="Menu obrolan" title="Menu obrolan">⋮</button>
+              <div class="chat-menu-popup" id="chat-menu-popup">
+                <button type="button" class="chat-menu-item danger" id="btn-chat-clear">🗑️ Hapus semua obrolan</button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="chat-messages" id="chat-messages"></div>

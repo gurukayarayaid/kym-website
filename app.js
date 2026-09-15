@@ -866,11 +866,17 @@
     var local = loadChat();
     var map = {};
     local.forEach(function (m) { map[m.id] = m; });
+    // pesan yang antre dihapus offline: jangan hidupkan lagi dari server
+    var outboxDel = {};
+    loadChatOutbox().forEach(function (o) {
+      if (o.action === 'chat_delete' && o.chat && o.chat.id) outboxDel[o.chat.id] = 1;
+    });
     var added = 0, updated = 0;
     var newIncoming = [];
     remoteChats.forEach(function (rm) {
       var lm = map[rm.id];
       if (!lm) {
+        if (outboxDel[rm.id]) return; // antre hapus — lewati, biar flush yang mengeksekusi
         local.push(rm);
         added++;
         newIncoming.push(rm);
@@ -910,10 +916,45 @@
         refreshChatRoomIfOpen();
         updateChatBadge();
       }
+      // propagasi hapus: pesan lama yang sudah tidak ada di server ikut dibersihkan lokal
+      if (res && Array.isArray(res.chats) && res.chats.length) {
+        if (reconcileChatDeletions(res.chats)) {
+          renderChatListIfVisible();
+          refreshChatRoomIfOpen();
+          updateChatBadge();
+        }
+      }
       // piggyback: unduh biner file (gambar/PDF/dokumen) yang belum ada lokal
       syncChatFiles();
       return n;
     }).catch(function () { return 0; });
+  }
+  // Hapus lokal untuk pesan yang sudah tidak ada di server (hasil hapus dari perangkat lain).
+  // Aman: hanya pesan >10 menit, tidak ada di antrean hapus, dan server tidak kosong.
+  function reconcileChatDeletions(remoteChats) {
+    var remoteIds = {};
+    remoteChats.forEach(function (m) { if (m && m.id) remoteIds[m.id] = 1; });
+    var outboxDel = {};
+    var outboxAll = {};
+    loadChatOutbox().forEach(function (o) {
+      if (!o.chat || !o.chat.id) return;
+      outboxAll[o.chat.id] = 1;
+      if (o.action === 'chat_delete') outboxDel[o.chat.id] = 1;
+    });
+    var now = Date.now();
+    var local = loadChat();
+    var removedAny = false;
+    var kept = local.filter(function (m) {
+      if (!m.deleted && m.id && !remoteIds[m.id] && !outboxDel[m.id] && !outboxAll[m.id] && m.ts && (now - m.ts) > 10 * 60 * 1000) {
+        var fid = (m.file && m.file.msgId) || m.id;
+        chatFileDel(fid);
+        removedAny = true;
+        return false;
+      }
+      return true;
+    });
+    if (removedAny) saveChat(kept);
+    return removedAny;
   }
   // Silent auto-pull untuk puisi (tanpa toast, untuk timer otomatis)
   function silentPoemPull() {
@@ -1045,6 +1086,26 @@
     '    } else if (body.action === "chat_delete") {',
     '      var cr = findChatRow(shChat, (body.chat||{}).id);',
     '      if (cr !== -1) shChat.deleteRow(cr);',
+    '    } else if (body.action === "chat_clear") {',
+    '      var ccKey = String(body.chatKey || "");',
+    '      var ccIds = [];',
+    '      if (ccKey) {',
+    '        for (var cci = shChat.getLastRow(); cci >= 2; cci--) {',
+    '          if (String(shChat.getRange(cci, 2).getValue()) === ccKey) {',
+    '            ccIds.push(String(shChat.getRange(cci, 1).getValue()));',
+    '            shChat.deleteRow(cci);',
+    '          }',
+    '        }',
+    '        var shCF2 = ss.getSheetByName("ChatFiles");',
+    '        if (shCF2 && ccIds.length) {',
+    '          ccIds.forEach(function(fid){',
+    '            for (var cfi = shCF2.getLastRow(); cfi >= 2; cfi--) {',
+    '              if (String(shCF2.getRange(cfi, 1).getValue()) === fid) shCF2.deleteRow(cfi);',
+    '            }',
+    '          });',
+    '        }',
+    '      }',
+    '      out.cleared = ccIds.length;',
     '    } else if (body.action === "chat_list") {',
     '      var cVals = shChat.getDataRange().getValues();',
     '      if (cVals.length) { cVals.shift(); }',
@@ -3096,6 +3157,7 @@
   /* --- Open chat room --- */
   function openChatRoom(chatKey, otherId, otherName, otherRole) {
     if (!isAllowedChat(chatKey)) { toast('Chat hanya tersedia dengan admin.'); return; }
+    hideChatMenu();
     $('chat-list-view').style.display = 'none';
     $('chat-contacts-view').style.display = 'none';
     $('chat-room-view').style.display = '';
@@ -3286,6 +3348,75 @@
     syncChatMessage('delete', msg);
     renderChatMessages(msg.chatKey);
     toast('Pesan dihapus.');
+  }
+
+  /* --- Hapus SELURUH obrolan dengan lawan bicara (menu ⋮ di ruang chat) --- */
+  function clearChatConversation() {
+    var container = $('chat-messages');
+    var chatKey = container ? container.getAttribute('data-chat') : '';
+    if (!chatKey || !isAllowedChat(chatKey)) { toast('Buka obrolan terlebih dahulu.'); return; }
+    var victims = loadChat().filter(function (m) { return m.chatKey === chatKey && !m.deleted; });
+    if (!victims.length) { toast('Tidak ada pesan untuk dihapus.'); return; }
+    var otherName = ($('chat-room-name') && $('chat-room-name').textContent) || 'pengguna ini';
+    if (!confirm('Hapus SELURUH obrolan dengan ' + otherName + ' (' + victims.length + ' pesan, termasuk file)? Berlaku untuk kedua pihak dan tidak bisa dibatalkan.')) return;
+    // Bersihkan lokal: file IDB + antrean upload
+    victims.forEach(function (v) {
+      var fid = (v.file && v.file.msgId) || v.id;
+      chatFileDel(fid);
+      shiftChatFilePending(fid);
+    });
+    saveChat(loadChat().filter(function (m) { return m.chatKey !== chatKey; }));
+    hideChatMenu();
+    closeChatRoomToList();
+    updateChatBadge();
+    if (!gasActive() || !online()) {
+      // offline: antrekan hapus per pesan agar tidak hidup lagi saat pull berikutnya
+      victims.forEach(function (v) { enqueueChat('chat_delete', sanitizeChatForGas(v)); });
+      toast('🗑️ Obrolan dihapus lokal — sinkron saat online.');
+      return;
+    }
+    toast('⏳ Menghapus obrolan…');
+    gasApi({ action: 'chat_clear', chatKey: chatKey }).then(function (res) {
+      if (res && typeof res.cleared !== 'undefined') {
+        toast('🗑️ Seluruh obrolan dengan ' + otherName + ' dihapus.');
+      } else {
+        fallbackClearPerMessage(victims, otherName);
+      }
+    }).catch(function () { fallbackClearPerMessage(victims, otherName); });
+  }
+  // Fallback server lama (tanpa aksi chat_clear): hapus per pesan + file per fileId
+  function fallbackClearPerMessage(victims, otherName) {
+    var i = 0;
+    function next() {
+      if (i >= victims.length) { toast('🗑️ Seluruh obrolan dengan ' + otherName + ' dihapus.'); return; }
+      var v = victims[i]; i++;
+      var clean = sanitizeChatForGas(v);
+      var p = gasApi({ action: 'chat_delete', chat: clean });
+      if (v.file && v.file.msgId) {
+        p = p.then(function () { return gasApi({ action: 'file_del', fileId: v.file.msgId }).catch(function () {}); });
+      }
+      p.then(function () { next(); }).catch(function () {
+        enqueueChat('chat_delete', clean);
+        next();
+      });
+    }
+    next();
+  }
+  function hideChatMenu() {
+    var mp = $('chat-menu-popup');
+    if (mp) mp.classList.remove('show');
+  }
+  function closeChatRoomToList() {
+    var roomView = $('chat-room-view');
+    if (roomView) roomView.style.display = 'none';
+    var tabConv = $('chat-tab-conv');
+    if (tabConv && tabConv.classList.contains('active')) {
+      $('chat-list-view').style.display = '';
+      renderChatList();
+    } else {
+      $('chat-contacts-view').style.display = '';
+      if (typeof renderChatContacts === 'function') renderChatContacts();
+    }
   }
 
   /* --- Mark read --- */
@@ -3543,6 +3674,9 @@
     var btnAttach = $('btn-chat-attach');
     var fileInput = $('chat-file-input');
     var btnFileClear = $('btn-chat-file-clear');
+    var menuBtn = $('chat-menu-btn');
+    var menuPopup = $('chat-menu-popup');
+    var btnClear = $('btn-chat-clear');
 
     if (chatForm) {
       chatForm.addEventListener('submit', function (e) {
@@ -3571,6 +3705,21 @@
     // Tombol ✕ batal lampiran
     if (btnFileClear) {
       btnFileClear.addEventListener('click', function () { clearPendingFile(); });
+    }
+    // Menu ⋮ di ruang obrolan
+    if (menuBtn && menuPopup) {
+      menuBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        menuPopup.classList.toggle('show');
+      });
+      document.addEventListener('click', function (e) {
+        if (!menuPopup.classList.contains('show')) return;
+        if (e.target === menuBtn || menuPopup.contains(e.target)) return;
+        menuPopup.classList.remove('show');
+      });
+    }
+    if (btnClear) {
+      btnClear.addEventListener('click', function () { clearChatConversation(); });
     }
     // Paste gambar dari clipboard ke input chat
     if (chatInput) {
