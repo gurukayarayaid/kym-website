@@ -267,6 +267,9 @@
   #galeri-list .poem-item { max-height: none; overflow: visible; }
   #galeri-list .poem-item pre { max-height: none; overflow: visible; height: auto; }
   #galeri-list details.poem-item[open] { height: auto; }
+  #galeri-guru-list .poem-item { max-height: none; overflow: visible; }
+  #galeri-guru-list .poem-item pre { max-height: none; overflow: visible; height: auto; }
+  #galeri-guru-list details.poem-item[open] { height: auto; }
   .poem-item .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 
   table.rekap { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .88rem; }
@@ -651,6 +654,15 @@
 
   <!-- ================= HALAMAN: GALERI PUISI ================= -->
   <section id="page-galeri" class="page">
+    <div class="card">
+      <h2>🎓 Galeri Puisi Guru/GTK</h2>
+      <p class="muted">Kumpulan karya puisi yang telah dikirim oleh guru dan tenaga kependidikan.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0;">
+        <input type="text" id="cari-guru" placeholder="🔍 Cari judul, nama, atau isi puisi…" style="flex:1; min-width:220px; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; font:inherit;">
+        <span class="muted" id="guru-jumlah"></span>
+      </div>
+      <div id="galeri-guru-list"></div>
+    </div>
     <div class="card">
       <h2>🖼️ Galeri Puisi Murid</h2>
       <p class="muted">Kumpulan karya puisi yang telah dikirim oleh murid-murid kita. Pencipta: pembaca karya teman dengan sopan!</p>

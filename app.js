@@ -994,7 +994,7 @@
         var galeriVisible = document.querySelector('#page-galeri.active');
         var karyakuVisible = document.querySelector('#page-karyaku.active');
         if (adminVisible) renderAdmin();
-        if (galeriVisible) renderGaleri();
+        if (galeriVisible) { renderGaleri(); renderGaleriGuru(); }
         if (karyakuVisible && getSession()) renderTokenChip();
       }
       return added + updated;
@@ -1344,7 +1344,7 @@
     window.scrollTo({ top: 0 });
     if (name === 'admin') initAdmin();
     if (name === 'karyaku') renderTokenChip();
-    if (name === 'galeri') renderGaleri();
+    if (name === 'galeri') { renderGaleri(); renderGaleriGuru(); }
     if (name === 'pasang') renderPasang();
     if (name === 'chat') { ensureAdminChat(); initChat(); }
     updateChatBadge();
@@ -1862,6 +1862,35 @@
   }
   $('g-cari').addEventListener('input', renderGaleri);
   $('g-kelas').addEventListener('change', renderGaleri);
+
+  /* ---------- Galeri Puisi Guru/GTK (publik, hanya tampil) ---------- */
+  function renderGaleriGuru() {
+    var q = ($('cari-guru') && $('cari-guru').value.trim().toLowerCase()) || '';
+    var list = loadPoems().filter(function (p) {
+      return p.jenjang === 'Guru/Tendik (GTK)';
+    });
+    if (q) {
+      list = list.filter(function (p) {
+        return ((p.judul || '') + ' ' + (p.nama || '') + ' ' + (p.isi || '')).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    list.sort(function (a, b) { return String(b.time).localeCompare(String(a.time)); });
+    $('guru-jumlah').textContent = list.length ? list.length + ' karya' : '';
+    var box = $('galeri-guru-list');
+    if (!list.length) {
+      box.innerHTML = '<div class="callout">Belum ada karya' + (q ? ' yang cocok dengan pencarian.' : ' dari guru/GTK.') + '</div>';
+      return;
+    }
+    box.innerHTML = list.map(function (p) {
+      return '<details class="poem-item" style="margin-top:12px;">' +
+        '<summary style="cursor:pointer; font-weight:700; color:var(--primary-2);">&ldquo;' + esc(p.judul) + '&rdquo;</summary>' +
+        '<div class="meta" style="margin:6px 0 4px;">' + esc(p.nama) + ' · SD Negeri Semambung · dikirim ' + fmtDT(p.time) + '</div>' +
+        '<pre style="margin-top:6px; max-height:none; overflow:visible; height:auto;">' + esc(p.isi) + '</pre>' +
+        (p.profil ? '<div style="margin-top:8px; padding:8px 12px; background:#f0fdf4; border-left:3px solid #22c55e; border-radius:0 8px 8px 0; font-size:.85rem; color:#166534;"><b>Bio:</b> ' + esc(p.profil) + '</div>' : '') +
+        '</details>';
+    }).join('');
+  }
+  $('cari-guru').addEventListener('input', renderGaleriGuru);
 
   /* ---------- Admin ---------- */
   var WORD_DOC = null;
