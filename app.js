@@ -2912,24 +2912,31 @@
     var isiLines = String(p.isi || '').split('\n').map(function (l) {
       return '<p class="verse">' + (wordEscape(l) || '&nbsp;') + '</p>';
     }).join('');
-    /* Struktur resmi KYM: JUDUL -> Nama Penulis -> Nama Sekolah -> Isi Puisi.
+    /* Struktur resmi KYM: JUDUL -> Nama Penulis -> Nama Sekolah -> (2 baris kosong) -> Isi Puisi.
        Biodata narasi hanya untuk GTK (murid tidak ada bionarasi). */
     var isGtk = p.jenjang === 'Guru/Tendik (GTK)';
     return '<div class="poem">' +
       '<p class="ptitle">' + wordEscape(p.judul) + '</p>' +
       '<p class="pauthor">' + wordEscape(p.nama) + '</p>' +
       '<p class="pschool">' + wordEscape(p.sekolah) + '</p>' +
+      '<p>&nbsp;</p><p>&nbsp;</p>' +
       isiLines +
       (isGtk && p.profil ? '<p class="pbio">' + wordEscape(p.profil) + '</p>' : '') +
       '</div>';
   }
   function buildWordDoc(poems) {
-    var n = poems.length;
-    var body = poems.map(poemWordHtml).join('<div class="sep"></div>');
+    var gtk = [], murid = [];
+    poems.forEach(function (p) {
+      if (p.jenjang === 'Guru/Tendik (GTK)') gtk.push(p); else murid.push(p);
+    });
+    var sorted = gtk.concat(murid);
+    var nGtk = gtk.length, nMurid = murid.length, n = sorted.length;
+    var body = sorted.map(poemWordHtml).join('<div class="sep"></div>');
     return wordDocStart('Rekap Karya Puisi KYM') +
-      '<p class="covertitle">REKAP KARYA PUISI MURID</p>' +
+      '<p class="covertitle">REKAP KARYA PUISI KYM</p>' +
       '<p class="coverinfo">KYM &mdash; Tema: Rukun dengan Teman</p>' +
-      '<p class="coverinfo">Total: ' + n + ' karya &mdash; Diunduh: ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) + '</p>' +
+      '<p class="coverinfo">Guru/GTK: ' + nGtk + ' karya &bull; Murid: ' + nMurid + ' karya &bull; Total: ' + n + ' karya</p>' +
+      '<p class="coverinfo">Diunduh: ' + new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) + '</p>' +
       '<div class="sep"></div>' + body +
       WORD_DOC_END;
   }
