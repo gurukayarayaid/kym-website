@@ -2887,13 +2887,13 @@
 
   /* ---------- Unduh semua puisi dalam satu file Word ---------- */
   var WORD_STYLES =
-    '@page { size: 21cm 29.7cm; margin: 4cm 3cm 4cm 3cm; }' +
+    '@page { size: A4; margin: 4cm 3cm 4cm 3cm; }' +
     'body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }' +
     '.covertitle { font-size: 16pt; font-weight: bold; text-align: center; }' +
     '.coverinfo { text-align: center; }' +
     '.sep { page-break-before: always; }' +
     '.ptitle { text-align: center; font-weight: bold; text-transform: uppercase; }' +
-    '.pauthor { text-align: center; }' +
+    '.pauthor { text-align: center; text-transform: capitalize; }' +
     '.pschool { text-align: center; margin-bottom: 18pt; }' +
     '.verse { margin: 0; }' +
     '.pbio { margin-top: 18pt; text-align: justify; }';
@@ -2918,7 +2918,7 @@
     return '<div class="poem">' +
       '<p class="ptitle">' + wordEscape(p.judul) + '</p>' +
       '<p class="pauthor">' + wordEscape(p.nama) + '</p>' +
-      '<p class="pschool">' + wordEscape(p.sekolah) + '</p>' +
+      '<p class="pschool">SD Negeri Semambung - Jabon - Sidoarjo</p>' +
       '<p>&nbsp;</p><p>&nbsp;</p>' +
       isiLines +
       (isGtk && p.profil ? '<p class="pbio">' + wordEscape(p.profil) + '</p>' : '') +
